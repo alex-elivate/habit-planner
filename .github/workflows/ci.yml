@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'HabitKit/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'HabitKit/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+# macOS runners bill at ten times the rate of Linux, and this is a private repo,
+# so superseded runs are cancelled rather than left to finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: HabitKit
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: HabitKit
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record toolchain
+        # Printed unconditionally so a failure caused by a runner image bump is
+        # obvious from the log rather than needing a reproduction.
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build --build-tests
+
+      - name: Test
+        run: swift test
