@@ -163,7 +163,7 @@ struct RegressionTests {
 
         var orderings = Set<String>()
         for _ in 0..<200 {
-            orderings.insert(events.shuffled().deduplicated().map(\.id).joined(separator: ","))
+            orderings.insert(events.shuffled().resolved().map(\.id).joined(separator: ","))
         }
         #expect(orderings.count == 1, "expected one ordering, got \(orderings.count)")
     }
@@ -182,6 +182,6 @@ struct RegressionTests {
         }
         let history = HabitHistory(habit: habit, events: events, today: referenceToday)
         #expect(history.settledOccurrences.count == 5)
-        #expect(events.deduplicated().count == 15)
+        #expect(events.resolved().count == 15)
     }
 }

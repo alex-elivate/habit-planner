@@ -10,7 +10,7 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phase 1 of 8 is complete: the domain layer, with 53 tests. No app targets exist yet.
+Phase 1 of 8 is complete: the domain layer, with 62 tests. No app targets exist yet.
 
 ## Platforms
 
@@ -50,7 +50,11 @@ This is a direct consequence of the sync design. CloudKit replicates last-writer
 
 The same reasoning drives event identity. A `CompletionEvent` derives its ID from its content, specifically `(habitID, dayKey, slotIndex)`, so the same completion arriving by two different sync paths collapses into one record instead of double-counting the day. Equality and hashing delegate to that ID, so a `Set` cannot disagree with it.
 
-Where two devices record conflicting states for the same day, completions keep the earliest instant and lifecycle events keep the latest. A completion is a fact that happened. A lifecycle state is an intention that can be changed.
+Completions are correctable, which matters because HealthKit can propose one and get it wrong. Undoing a tick appends a retraction rather than mutating or deleting anything, and the fold takes whichever assertion was recorded last.
+
+That needs two clocks. `occurredAt` is when the habit was done, `recordedAt` is when somebody said so, and they come apart whenever a completion is backfilled from Health a day later. Conflicts resolve on `recordedAt`, so a correction wins. The surviving `occurredAt` is the earliest asserted, so a completion arriving twice keeps the moment it actually happened.
+
+Because nothing derived is stored, a retraction needs no repair. The gate simply recomputes. If it had already opened and a habit was added, that habit stays and the gate closes again behind it.
 
 ## Domain rules
 
@@ -76,6 +80,12 @@ A consequence worth knowing: alternating completion and miss keeps a streak aliv
 A `DayKey` is a civil date stored as its `yyyyMMdd` integer. It is resolved in the user's time zone at the moment of completion and then stored, never recomputed from a raw `Date` later. Without this, flying east would silently add or remove a day of streak and misfire the gate.
 
 Arithmetic on a `DayKey` is time zone free and uses integer math rather than `Calendar`, because folding a year of history per habit runs on every widget refresh. A test walks four years day by day and checks every year, month, day, and weekday against Foundation, so the hand-rolled version stays pinned to the real calendar.
+
+### Outside signals propose, they never own
+
+HealthKit can suggest that a walk happened or that a dose was logged, and the app still writes and owns the completion. Deriving completion from a live query would rest the gate on data that can vanish: revoking read permission returns an empty result set that is indistinguishable from never having done the habit, with no API to tell the two apart. Samples are also user-deletable, authorization is granted per medication, and iOS 26 lets someone share only a recent window of history.
+
+So a health-backed habit degrades to an ordinary checkbox when the signal is missing, and the history already recorded is untouched. The drug, the dose and the schedule stay in Apple Health, which owns them properly.
 
 ### An unfinished day is not a miss
 

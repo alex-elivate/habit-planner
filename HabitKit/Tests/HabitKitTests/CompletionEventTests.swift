@@ -49,7 +49,7 @@ struct CompletionEventTests {
             CompletionEvent(habitID: habitID, dayKey: day.advanced(by: 1), occurredAt: Date(timeIntervalSince1970: 900), timeZoneIdentifier: "UTC")
         ]
 
-        let deduplicated = events.deduplicated()
+        let deduplicated = events.resolved()
         #expect(deduplicated.count == 2)
 
         let first = try #require(deduplicated.first)

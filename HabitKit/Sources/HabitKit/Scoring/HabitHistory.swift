@@ -41,9 +41,8 @@ public struct HabitHistory: Hashable, Sendable {
         let timeline = LifecycleTimeline(startedOn: habit.startedOn, events: lifecycleEvents)
         self.lifecycle = timeline
 
-        let completedDays = Set(
-            events.lazy.filter { $0.habitID == habit.id }.map(\.dayKey)
-        )
+        // Corrections applied, so a retracted tick does not count as done.
+        let completedDays = Array(events).completedDays(for: habit.id)
 
         // One pass over the ordinal range. Chaining through(), filter and map allocated
         // three arrays the size of the habit's entire lifetime, on a path that runs inside
