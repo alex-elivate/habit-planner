@@ -10,7 +10,8 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phase 1 of 8 is complete: the domain layer, with 62 tests. No app targets exist yet.
+Phases 1 and 2 of 8 are complete: the domain layer and the persistence layer, with 100 tests.
+No app targets exist yet.
 
 ## Platforms
 
@@ -20,10 +21,14 @@ All Apple. iPhone, Apple Watch, and Mac. A web dashboard was considered and drop
 
 ```
 HabitKit          pure Swift. Domain model, scoring, rules. No SwiftData, no UI.
-Persistence       SwiftData models, container config, WatchConnectivity bridge.
+HabitStore        SwiftData models, mapping, container config. Depends on HabitKit.
 HabitIntents      App Intents, shared across every platform.
 HabitAI           macOS only. On-device model access behind a protocol.
 ```
+
+`HabitKit` knows nothing about `HabitStore`. The arrow points one way, which is what keeps the
+domain testable with no container and preserves the exit path if SwiftData and CloudKit turn
+out not to work together for this app.
 
 Target topology is one multiplatform app target for iPhone, iPad, and Mac, plus a separate watchOS target. watchOS cannot join a multiplatform target, so that split is a constraint rather than a preference.
 
@@ -91,6 +96,95 @@ So a health-backed habit degrades to an ordinary checkbox when the signal is mis
 
 Today is held apart from settled history. A habit due today that has not been done yet is unfinished. Counting it as missed would break every streak each morning before breakfast.
 
+## Persistence
+
+`HabitStore` holds the SwiftData models and the mapping between them and HabitKit's value
+types. Nothing above it ever sees a `@Model` object. Reads return domain values, which are
+`Sendable`, so a model object cannot escape the actor that owns its context.
+
+### Two stores, and only one of them syncs
+
+The synced store holds habits, completions, lifecycle events and routine runs, and replicates
+to the private CloudKit database. A second store holds one model and never leaves the device.
+
+That second store exists for App Store guideline 5.1.3(ii), which says an app may not store
+personal health information in iCloud. The only thing in it is the per-habit binding that says
+what to ask HealthKit about, and for a medication habit that names a drug the person takes.
+
+It is the only thing kept, because everything else a reconciliation might want turns out to be
+derivable. A ledger of already-consumed health samples is unnecessary, since completion
+identifiers are content-addressed and re-reading the same day produces the identifier that is
+already there. Dose status and sample durations are unnecessary, since the app owns "done or
+not done" and measures its own durations from the routine runner. A binding is also per-device
+in practice, because HealthKit authorization is per-device and macOS has no HealthKit at all.
+
+A completion the app writes after a health signal proposed it stays in the synced store. It is
+the app's own record of a confirmation rather than a copy of a health sample, and that is the
+line the split is drawn on.
+
+SwiftData will not let one model type appear in two configurations, so the boundary is
+enforced by the framework rather than by review.
+
+### Deduplication without unique constraints
+
+CloudKit has no unique constraints, and SwiftData rejects `@Attribute(.unique)` on a synced
+model. Nothing in the storage layer can stop the same completion existing twice.
+
+The defence runs in two places and both are needed. On write, the store collapses whatever
+already carries the same content-addressed identifier. On read, the fold runs the domain's own
+resolution over whatever it finds, because a write today cannot stop a peer's row arriving
+tomorrow.
+
+Both call into HabitKit rather than reimplementing the rule. Two copies of a subtle precedence
+rule that have to agree forever will stop agreeing.
+
+### Habits and their events are not related records
+
+They are joined by a plain identifier instead. CloudKit does not guarantee that related
+changes save atomically, so a completion can arrive before the habit it belongs to. As a flat
+record that is merely early. As a relationship it would be an orphan.
+
+A routine run and its steps are the exception and do use a relationship, because they are
+written together in one save on one device and a step means nothing without its run.
+
+### An outside signal may only fill a blank
+
+A bounded reconciliation on launch re-reads a trailing window of HealthKit, so it repeatedly
+meets days that already have an answer. It is allowed to write only where nothing has been
+asserted at all.
+
+Guarding on "no assertion" rather than "no completion" is the whole point. A retraction is an
+assertion, and it is exactly the one that must survive. Without that rule a backfill arrives
+with a fresh timestamp, beats the retraction on recency, and a habit the person deliberately
+un-ticked ticks itself again every morning with no way to stop it.
+
+### The watch downgrade lives in the factory
+
+A request to sync is downgraded to a local store on watchOS by the container factory, so no
+call site can opt out of it by accident. The platform is a parameter rather than a compilation
+condition, which means the rule is exercised by the test suite on every run instead of only in
+a build nobody runs tests against.
+
+### The schema freezes on promotion
+
+SwiftData has no `initializeCloudKitSchema()`. That call belongs to
+`NSPersistentCloudKitContainer`, and the instruction does not carry over however often it is
+repeated. SwiftData creates record types and fields lazily in the development environment as
+records are saved, which has a consequence worth stating plainly.
+
+A field exists in the schema only once a record carrying a non-nil value for it has been saved.
+An optional the development build never populates is simply absent, and promoting in that state
+makes it permanently absent from production, because a promoted schema accepts additions but
+never renames or removals.
+
+So `primeCloudKitSchema()` writes one record of every synced type with every field populated,
+then deletes them. The deletions sync. The schema they created does not go away. Run it once
+from a development build, confirm every type and field in the CloudKit dashboard, and only then
+promote.
+
+Every model also carries a `schemaVersion` and a spare `payloadJSON`, because the cheapest time
+to add an escape hatch is before the thing it protects is immutable.
+
 ## Getting started
 
 ```bash
@@ -98,15 +192,15 @@ cd HabitKit
 swift test
 ```
 
-The package has no dependencies and the suite runs in milliseconds. That speed is deliberate. It is what keeps open the option of dropping SwiftData later if the CloudKit pairing proves unworkable.
+That runs both targets. The package has no dependencies and the suite runs in milliseconds. That speed is deliberate. It is what keeps open the option of dropping SwiftData later if the CloudKit pairing proves unworkable.
 
 ## Roadmap
 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | HabitKit domain package | Done |
-| 2 | SwiftData persistence and CloudKit schema | Next |
-| 3 | iOS app and routine runner | |
+| 2 | SwiftData persistence and CloudKit schema | Done |
+| 3 | iOS app and routine runner | Next |
 | 4 | watchOS app and sync bridge | |
 | 5 | Widgets and watch complication | |
 | 6 | App Intents, Siri, Shortcuts | |

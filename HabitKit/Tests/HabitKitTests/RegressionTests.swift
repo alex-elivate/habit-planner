@@ -184,4 +184,28 @@ struct RegressionTests {
         #expect(history.settledOccurrences.count == 5)
         #expect(events.resolved().count == 15)
     }
+
+    @Test("One habit's pause must not pause every other habit")
+    func lifecycleDoesNotLeakBetweenHabits() {
+        // `HabitHistory` filtered completions by habit and did not filter lifecycle events,
+        // so handing it the whole lifecycle log — which is exactly what one store fetch
+        // returns — applied any habit's pause to all of them. The unaffected habit read as
+        // paused, and its settled history collapsed to the days since somebody else's pause,
+        // so every score and gate assessment was computed from a handful of days.
+        let start = referenceToday.advanced(by: -10)
+        let paused = Habit(title: "paused", routine: .morning, order: 0, startedOn: start)
+        let active = Habit(title: "active", routine: .morning, order: 1, startedOn: start)
+
+        let wholeLog = [
+            LifecycleEvent(habitID: paused.id, dayKey: start.advanced(by: 1), state: .paused,
+                           occurredAt: .distantPast, timeZoneIdentifier: "UTC")
+        ]
+
+        let history = HabitHistory(habit: active, events: [CompletionEvent](),
+                                   lifecycle: wholeLog, today: referenceToday)
+
+        #expect(history.currentState == .active)
+        #expect(history.settledOccurrences.count == 10)
+    }
+
 }

@@ -38,7 +38,11 @@ public struct HabitHistory: Hashable, Sendable {
         self.habit = habit
         self.today = today
 
-        let timeline = LifecycleTimeline(startedOn: habit.startedOn, events: lifecycleEvents)
+        let timeline = LifecycleTimeline(
+            habitID: habit.id,
+            startedOn: habit.startedOn,
+            events: lifecycleEvents
+        )
         self.lifecycle = timeline
 
         // Corrections applied, so a retracted tick does not count as done.

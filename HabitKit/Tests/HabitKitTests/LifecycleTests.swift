@@ -13,7 +13,8 @@ struct LifecycleTests {
 
     @Test("A habit with no lifecycle events is active")
     func defaultsToActive() {
-        let timeline = LifecycleTimeline(startedOn: referenceToday.advanced(by: -30),
+        let timeline = LifecycleTimeline(habitID: UUID(),
+                                         startedOn: referenceToday.advanced(by: -30),
                                          events: [LifecycleEvent]())
         #expect(timeline.isActive(on: referenceToday))
         #expect(timeline.state(on: referenceToday.advanced(by: -20)) == .active)
@@ -23,7 +24,7 @@ struct LifecycleTests {
     func statesApplyForward() {
         let id = UUID()
         let start = referenceToday.advanced(by: -30)
-        let timeline = LifecycleTimeline(startedOn: start, events: [
+        let timeline = LifecycleTimeline(habitID: id, startedOn: start, events: [
             event(id, referenceToday.advanced(by: -10), .paused)
         ])
 
@@ -69,7 +70,7 @@ struct LifecycleTests {
         let start = referenceToday.advanced(by: -40)
         let habit = Habit(id: id, title: "Walk", routine: .morning, order: 0, startedOn: start)
 
-        let timeline = LifecycleTimeline(startedOn: start, events: [
+        let timeline = LifecycleTimeline(habitID: id, startedOn: start, events: [
             event(id, start.advanced(by: 10), .paused),
             event(id, start.advanced(by: 15), .active),
             event(id, start.advanced(by: 25), .paused),
@@ -138,7 +139,7 @@ struct LifecycleTests {
             event(id, day, .active, at: Date(timeIntervalSince1970: 500))
         ]
         #expect(events.deduplicated().count == 1)
-        let timeline = LifecycleTimeline(startedOn: referenceToday.advanced(by: -30), events: events)
+        let timeline = LifecycleTimeline(habitID: id, startedOn: referenceToday.advanced(by: -30), events: events)
         #expect(timeline.state(on: referenceToday) == .active)
     }
 }

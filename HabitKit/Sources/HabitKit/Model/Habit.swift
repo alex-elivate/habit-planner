@@ -1,5 +1,22 @@
 import Foundation
 
+/// Where a habit's completions are expected to come from.
+///
+/// Deliberately coarse. This says only that a habit expects an outside signal, never which
+/// signal, because the specific binding for a health-backed habit names a drug or a sample
+/// type and that is the strongest personal health information in the app. App Store 5.1.3(ii)
+/// keeps it out of iCloud, so it lives in a local-only store instead. This field is assigned
+/// by the app rather than read from HealthKit, which is what makes it safe to sync.
+///
+/// It is only an expectation. A habit whose signal is missing or revoked degrades to an
+/// ordinary checkbox, and nothing here may ever reach the lock-in gate.
+public enum CompletionSource: String, Hashable, Codable, Sendable, CaseIterable {
+    /// The person ticks it themselves.
+    case manual
+    /// An outside signal proposes it and the person confirms. The app still writes the record.
+    case automatic
+}
+
 /// A single habit inside a routine.
 ///
 /// Everything here is an immutable fact about what the habit *is*. Nothing describes how it
@@ -32,6 +49,11 @@ public struct Habit: Identifiable, Hashable, Codable, Sendable {
 
     public var schedule: Schedule
 
+    /// Whether this habit expects an outside signal to propose its completions.
+    ///
+    /// Proposes, never owns. See `CompletionSource`.
+    public var completionSource: CompletionSource
+
     /// First day this habit could be due. History before it is not counted against you.
     public var startedOn: DayKey
 
@@ -44,6 +66,7 @@ public struct Habit: Identifiable, Hashable, Codable, Sendable {
         routine: RoutineSlot,
         order: Int,
         schedule: Schedule = .daily,
+        completionSource: CompletionSource = .manual,
         startedOn: DayKey
     ) {
         self.id = id
@@ -54,6 +77,7 @@ public struct Habit: Identifiable, Hashable, Codable, Sendable {
         self.routine = routine
         self.order = order
         self.schedule = schedule
+        self.completionSource = completionSource
         self.startedOn = startedOn
     }
 
