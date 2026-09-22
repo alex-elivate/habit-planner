@@ -10,7 +10,7 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phase 1 of 8 is complete: the domain layer, with 34 tests. No app targets exist yet.
+Phase 1 of 8 is complete: the domain layer, with 53 tests. No app targets exist yet.
 
 ## Platforms
 
@@ -44,9 +44,13 @@ So the watch keeps a local store and bridges to the phone over WatchConnectivity
 
 There is no streak count, no `isLockedIn` flag, and no completion tally in the data model. Completions are append-only immutable events, and every score and rule decision is computed by folding that log at read time.
 
+Lifecycle works the same way. Pausing and archiving are events in their own log rather than fields on the habit. A single mutable `pausedOn` cannot describe a pause that ended, so resuming would either replay the paused days as misses or freeze the habit forever. A log handles any number of pauses and survives last-writer-wins replication, because nothing is ever overwritten.
+
 This is a direct consequence of the sync design. CloudKit replicates last-writer-wins, offers no unique constraints, and does not guarantee that related changes save atomically. A gate that makes an irreversible decision from stored aggregate state would misfire on that foundation, and it would misfire quietly.
 
-The same reasoning drives event identity. A `CompletionEvent` derives its ID from its content, specifically `(habitID, dayKey, slotIndex)`, so the same completion arriving by two different sync paths collapses into one record instead of double-counting the day.
+The same reasoning drives event identity. A `CompletionEvent` derives its ID from its content, specifically `(habitID, dayKey, slotIndex)`, so the same completion arriving by two different sync paths collapses into one record instead of double-counting the day. Equality and hashing delegate to that ID, so a `Set` cannot disagree with it.
+
+Where two devices record conflicting states for the same day, completions keep the earliest instant and lifecycle events keep the latest. A completion is a fact that happened. A lifecycle state is an intention that can be changed.
 
 ## Domain rules
 

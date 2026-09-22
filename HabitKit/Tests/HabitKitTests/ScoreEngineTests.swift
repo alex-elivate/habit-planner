@@ -11,7 +11,7 @@ struct ScoreEngineTests {
             makeHistory("CCC", completedToday: true),
             makeHistory("CCC", completedToday: true),
             makeHistory("CCC", completedToday: false),
-            makeHistory("CCC", completedToday: false, lifecycle: .archived)
+            makeHistory("CCC", completedToday: false, state: .archived)
         ]
 
         let progress = ScoreEngine.todayProgress(for: histories)

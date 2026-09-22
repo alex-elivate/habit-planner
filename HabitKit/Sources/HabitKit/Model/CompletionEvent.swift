@@ -6,7 +6,7 @@ import Foundation
 /// completion arriving twice by different routes (CloudKit from the Mac, WatchConnectivity
 /// from the watch) collapses to one row. CloudKit offers no unique constraints, so this
 /// determinism is the only thing standing between us and double-counted days.
-public struct CompletionEvent: Identifiable, Hashable, Codable, Sendable {
+public struct CompletionEvent: Identifiable, Codable, Sendable {
     public let habitID: UUID
 
     /// The civil day this counts toward, resolved in `timeZoneIdentifier` at the moment
@@ -18,6 +18,11 @@ public struct CompletionEvent: Identifiable, Hashable, Codable, Sendable {
     /// This is *not* the habit's position in the routine. Display order changes when the
     /// person reorders their morning, and an identifier that moved with it would fork every
     /// past completion into a duplicate.
+    ///
+    /// Nothing scores this. A habit is due at most once a day, so the field exists purely to
+    /// keep two taps on the same habit on the same day from colliding into one identifier.
+    /// Scoring a habit several times a day would need a `slotsPerDay` on `Habit` to supply
+    /// the denominator, which v1 deliberately does not have.
     public let slotIndex: Int
 
     /// The real instant, kept for reporting on time of day. Never used to derive `dayKey`.
@@ -62,17 +67,39 @@ public struct CompletionEvent: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+extension CompletionEvent: Hashable {
+    /// Delegates to `id` so identity cannot disagree with the content-addressed identifier.
+    ///
+    /// The synthesized version covered `occurredAt` and `timeZoneIdentifier`, so the same
+    /// completion arriving from the Mac and from the Watch compared unequal and landed in a
+    /// `Set` as two entries. Any count-based consumer reaching for `Set` or `contains`
+    /// instead of `deduplicated()` would have double-counted the day, silently, along
+    /// exactly the sync path this design exists to defend.
+    public static func == (lhs: CompletionEvent, rhs: CompletionEvent) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
 extension Collection<CompletionEvent> {
     /// Collapses duplicates that arrived by more than one sync path, keeping the earliest
     /// recorded instant for each logical completion.
+    ///
+    /// `id` breaks the final tie. Without it the sort key was not a total order, and since
+    /// `Array.sorted` is not stable and `Dictionary.values` iteration varies per process, a
+    /// single "complete my whole routine" tap, which stamps every event with one `Date()`,
+    /// produced a different ordering on every run.
     public func deduplicated() -> [CompletionEvent] {
         Dictionary(grouping: self, by: \.id)
             .values
             .compactMap { $0.min(by: { $0.occurredAt < $1.occurredAt }) }
-            .sorted { ($0.dayKey, $0.occurredAt) < ($1.dayKey, $1.occurredAt) }
+            .sorted { lhs, rhs in
+                if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
+                if lhs.occurredAt != rhs.occurredAt { return lhs.occurredAt < rhs.occurredAt }
+                return lhs.id < rhs.id
+            }
     }
-}
-
-private func < (lhs: (DayKey, Date), rhs: (DayKey, Date)) -> Bool {
-    lhs.0 == rhs.0 ? lhs.1 < rhs.1 : lhs.0 < rhs.0
 }

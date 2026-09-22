@@ -10,11 +10,43 @@ import Foundation
 /// day after" is a question about the calendar, not about where anyone is standing. It is
 /// also pure integer math, because folding a year of history per habit on every refresh is
 /// far too hot a path for `Calendar`.
-public struct DayKey: Hashable, Comparable, Codable, Sendable {
+public struct DayKey: Hashable, Comparable, Sendable {
     public let rawValue: Int
 
+    /// Trusts the caller. Use `init?(validating:)` for anything crossing a storage
+    /// or network boundary.
     public init(rawValue: Int) {
         self.rawValue = rawValue
+    }
+
+    /// Rejects anything that is not a real calendar date.
+    ///
+    /// This matters more than it looks. `DayKey(rawValue: 0)` is the natural value of a
+    /// missing or zeroed CloudKit `Int64`, and its ordinal is -719560. Folding history for
+    /// a habit that started then builds a 740,000 element array, on a code path that runs
+    /// inside a widget extension under a tight memory budget.
+    public init?(validating rawValue: Int) {
+        self.init(rawValue: rawValue)
+        guard isValid else { return nil }
+    }
+
+    /// Whether this names a day that actually exists.
+    public var isValid: Bool {
+        guard year >= 1, (1...12).contains(month), day >= 1 else { return false }
+        return day <= Self.daysInMonth(month: month, year: year)
+    }
+
+    static func daysInMonth(month: Int, year: Int) -> Int {
+        switch month {
+        case 1, 3, 5, 7, 8, 10, 12: return 31
+        case 4, 6, 9, 11: return 30
+        case 2: return isLeapYear(year) ? 29 : 28
+        default: return 0
+        }
+    }
+
+    static func isLeapYear(_ year: Int) -> Bool {
+        (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
     }
 
     public init(year: Int, month: Int, day: Int) {
@@ -101,5 +133,28 @@ extension DayKey {
 extension DayKey: CustomStringConvertible {
     public var description: String {
         String(format: "%04d-%02d-%02d", year, month, day)
+    }
+}
+
+// MARK: - Codable
+
+extension DayKey: Codable {
+    /// Encodes as a bare integer. The synthesized form would be `{"rawValue": 20260921}`,
+    /// and in CloudKit this needs to be a plain `Int64` field. Worth six lines now, a
+    /// schema migration later.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(Int.self)
+        guard let value = DayKey(validating: raw) else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath,
+                      debugDescription: "\(raw) is not a valid yyyyMMdd day")
+            )
+        }
+        self = value
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }

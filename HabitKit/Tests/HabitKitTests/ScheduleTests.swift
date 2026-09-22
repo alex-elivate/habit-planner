@@ -32,31 +32,40 @@ struct ScheduleTests {
         let start = DayKey(year: 2026, month: 9, day: 21)
         let habit = Habit(title: "Walk", routine: .morning, order: 0, startedOn: start)
 
-        #expect(!habit.wasScheduled(on: start.advanced(by: -1)))
-        #expect(habit.wasScheduled(on: start))
-        #expect(habit.wasScheduled(on: start.advanced(by: 10)))
+        #expect(!habit.isScheduled(on: start.advanced(by: -1)))
+        #expect(habit.isScheduled(on: start))
+        #expect(habit.isScheduled(on: start.advanced(by: 10)))
     }
 
-    @Test("Pausing stops the clock rather than accruing misses")
-    func pausing() {
-        let start = DayKey(year: 2026, month: 9, day: 1)
-        let paused = DayKey(year: 2026, month: 9, day: 10)
-        var habit = Habit(title: "Walk", routine: .morning, order: 0, startedOn: start)
-        habit.lifecycle = .paused
-        habit.pausedOn = paused
+    @Test("The same set of days always encodes to the same bytes")
+    func encodingIsStable() throws {
+        // Set has no stable iteration order, so the synthesized Codable emitted a different
+        // blob almost every call. That manufactured CloudKit sync churn on records that had
+        // not changed.
+        let schedule = Schedule.daysOfWeek([.monday, .wednesday, .friday, .saturday])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
 
-        #expect(habit.wasScheduled(on: paused.advanced(by: -1)))
-        #expect(!habit.wasScheduled(on: paused))
-        #expect(!habit.wasScheduled(on: paused.advanced(by: 30)))
+        var encodings = Set<String>()
+        for _ in 0..<200 {
+            encodings.insert(String(decoding: try encoder.encode(schedule), as: UTF8.self))
+        }
+        #expect(encodings.count == 1, "expected one encoding, got \(encodings.count): \(encodings)")
     }
 
-    @Test("An archived habit keeps its history but is never due")
-    func archived() {
-        let start = DayKey(year: 2026, month: 9, day: 1)
-        var habit = Habit(title: "Walk", routine: .morning, order: 0, startedOn: start)
-        habit.lifecycle = .archived
-
-        #expect(habit.wasScheduled(on: start.advanced(by: 3)))
-        #expect(!habit.isDue(on: start.advanced(by: 3)))
+    @Test("Schedules round-trip through Codable")
+    func codableRoundTrip() throws {
+        let cases: [Schedule] = [
+            .daily,
+            .daysOfWeek([]),
+            .daysOfWeek([.sunday]),
+            .daysOfWeek([.monday, .wednesday, .friday]),
+            .daysOfWeek(Set(Weekday.allCases))
+        ]
+        for schedule in cases {
+            let data = try JSONEncoder().encode(schedule)
+            let decoded = try JSONDecoder().decode(Schedule.self, from: data)
+            #expect(decoded == schedule)
+        }
     }
 }

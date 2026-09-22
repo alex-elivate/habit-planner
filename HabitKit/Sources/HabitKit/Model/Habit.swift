@@ -2,9 +2,11 @@ import Foundation
 
 /// A single habit inside a routine.
 ///
-/// Note what is *not* here: no streak count, no `isLockedIn`, no completion tally. Those are
-/// folded from the completion log on demand. Storing them would mean an irreversible gate
-/// decision resting on mutable state replicated last-writer-wins, which misfires quietly.
+/// Everything here is an immutable fact about what the habit *is*. Nothing describes how it
+/// is going. There is no streak count, no `isLockedIn`, no completion tally, and no lifecycle
+/// state, because all of those are folded from logs on demand. Storing them would rest an
+/// irreversible gate decision on mutable state replicated last-writer-wins, which misfires
+/// quietly. Lifecycle in particular lives in `LifecycleEvent`.
 public struct Habit: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
 
@@ -21,29 +23,17 @@ public struct Habit: Identifiable, Hashable, Codable, Sendable {
 
     public var routine: RoutineSlot
 
-    /// Display position within the routine. Safe to reorder freely, because no identifier
-    /// is derived from it.
+    /// Display position within the routine.
+    ///
+    /// Safe to reorder freely. Nothing derives identity or any rule decision from it, which
+    /// has to stay true: the gate once tiebroke on this field, so dragging a row could
+    /// unlock it.
     public var order: Int
 
     public var schedule: Schedule
 
     /// First day this habit could be due. History before it is not counted against you.
     public var startedOn: DayKey
-
-    /// Set by the person, never inferred. Distinct from lock-in, which is always derived.
-    public var lifecycle: Lifecycle
-
-    /// The day a pause took effect, if one did.
-    ///
-    /// Without this, pausing would quietly accrue misses for every day you were away and
-    /// wipe out gate progress you had earned. Pausing should cost nothing.
-    public var pausedOn: DayKey?
-
-    public enum Lifecycle: String, Hashable, Codable, Sendable {
-        case active
-        case paused
-        case archived
-    }
 
     public init(
         id: UUID = UUID(),
@@ -54,9 +44,7 @@ public struct Habit: Identifiable, Hashable, Codable, Sendable {
         routine: RoutineSlot,
         order: Int,
         schedule: Schedule = .daily,
-        startedOn: DayKey,
-        lifecycle: Lifecycle = .active,
-        pausedOn: DayKey? = nil
+        startedOn: DayKey
     ) {
         self.id = id
         self.title = title
@@ -67,22 +55,13 @@ public struct Habit: Identifiable, Hashable, Codable, Sendable {
         self.order = order
         self.schedule = schedule
         self.startedOn = startedOn
-        self.lifecycle = lifecycle
-        self.pausedOn = pausedOn
     }
 
-    /// Whether the habit was on the hook for `day`, ignoring whether it is active now.
+    /// Whether the calendar puts this habit on the hook for `day`.
     ///
-    /// This is the predicate history is built from, so that archiving or pausing a habit
-    /// today does not rewrite what was true last month.
-    public func wasScheduled(on day: DayKey) -> Bool {
-        guard day >= startedOn else { return false }
-        if let pausedOn, day >= pausedOn { return false }
-        return schedule.isScheduled(on: day)
-    }
-
-    /// Whether this habit should be presented for completion on `day`.
-    public func isDue(on day: DayKey) -> Bool {
-        lifecycle == .active && wasScheduled(on: day)
+    /// Lifecycle is deliberately not consulted here. Combining the two is `HabitHistory`'s
+    /// job, because only it holds the lifecycle log.
+    public func isScheduled(on day: DayKey) -> Bool {
+        day >= startedOn && schedule.isScheduled(on: day)
     }
 }

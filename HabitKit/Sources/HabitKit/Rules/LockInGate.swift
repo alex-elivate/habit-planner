@@ -59,7 +59,8 @@ public enum LockInGate {
             : Double(window.count(where: \.isCompleted)) / Double(window.count)
 
         let doubleMiss = firstDoubleMiss(
-            in: history.settledOccurrences(withinLast: doubleMissWindowDays)
+            in: history.settledOccurrences,
+            secondMissOnOrAfter: history.today.advanced(by: -doubleMissWindowDays)
         )
 
         let decision: Decision
@@ -89,37 +90,53 @@ public enum LockInGate {
 
     /// Whether a new habit may be added to `routine`.
     ///
-    /// Only the most recently started habit in the routine is examined. Older habits have
-    /// already earned their place, and re-judging them would mean one rough week retroactively
-    /// locking a routine the person built months ago.
+    /// Only the most recently started *active* habit in the routine is examined. Older habits
+    /// have already earned their place, and re-judging them would mean one rough week
+    /// retroactively locking a routine the person built months ago. Paused and archived
+    /// habits are skipped: a paused habit's occurrence count is frozen, so leaving it in the
+    /// running let it block the routine permanently, with archiving the only escape.
     public static func canAddHabit(
         to routine: RoutineSlot,
         histories: some Sequence<HabitHistory>
     ) -> Decision {
         let candidates = histories.filter {
-            $0.habit.routine == routine && $0.habit.lifecycle != .archived
+            $0.habit.routine == routine && $0.currentState == .active
         }
-        guard let newest = candidates.max(by: { ($0.habit.startedOn, $0.habit.order) < ($1.habit.startedOn, $1.habit.order) }) else {
+        // Ties break on the identifier, never on `order`. Display position is mutable, so
+        // tiebreaking on it meant dragging a row could change which habit was judged and
+        // open an irreversible gate. Falling back on sequence order instead would have made
+        // the answer depend on an unordered SwiftData fetch.
+        guard let newest = candidates.max(by: { lhs, rhs in
+            if lhs.habit.startedOn != rhs.habit.startedOn {
+                return lhs.habit.startedOn < rhs.habit.startedOn
+            }
+            return lhs.habit.id.uuidString < rhs.habit.id.uuidString
+        }) else {
             return .open  // The first habit in an empty routine is never gated.
         }
         return assess(newest).decision
     }
 
-    /// The day of the second miss in the first consecutive pair, if there is one.
-    private static func firstDoubleMiss(in occurrences: [ScheduledOccurrence]) -> DayKey? {
+    /// The day of the second miss in the first consecutive pair landing inside the window.
+    ///
+    /// The scan runs over the whole history rather than a pre-sliced window, because misses
+    /// are adjacent as *occurrences* while the window is measured in *days*. Slicing first
+    /// blinded it to any pair straddling the boundary, which made the window 13 days rather
+    /// than 14 for a daily habit. For a three-times-a-week habit the gap between consecutive
+    /// sessions is two or three days, so the same slice hid a genuine double-miss entirely.
+    private static func firstDoubleMiss(
+        in occurrences: [ScheduledOccurrence],
+        secondMissOnOrAfter earliest: DayKey
+    ) -> DayKey? {
         var previousWasMiss = false
         for occurrence in occurrences {
             if occurrence.isCompleted {
                 previousWasMiss = false
             } else {
-                if previousWasMiss { return occurrence.day }
+                if previousWasMiss, occurrence.day >= earliest { return occurrence.day }
                 previousWasMiss = true
             }
         }
         return nil
     }
-}
-
-private func < (lhs: (DayKey, Int), rhs: (DayKey, Int)) -> Bool {
-    lhs.0 == rhs.0 ? lhs.1 < rhs.1 : lhs.0 < rhs.0
 }

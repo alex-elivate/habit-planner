@@ -87,7 +87,7 @@ struct LockInGateTests {
                 startedOn: today.advanced(by: -days)
             )
             let scheduled = habit.startedOn.through(today.advanced(by: -1))
-                .filter { habit.wasScheduled(on: $0) }
+                .filter { habit.isScheduled(on: $0) }
             let events = scheduled.map {
                 CompletionEvent(habitID: habit.id, dayKey: $0, occurredAt: .distantPast, timeZoneIdentifier: "UTC")
             }
@@ -132,7 +132,7 @@ struct LockInGateTests {
 
     @Test("An archived habit no longer holds the routine shut")
     func archivedDoesNotBlock() {
-        let abandoned = makeHistory(pattern(length: 6, missesAt: []), lifecycle: .archived, routine: .morning)
+        let abandoned = makeHistory(pattern(length: 6, missesAt: []), state: .archived, routine: .morning)
         let established = makeHistory(pattern(length: 60, missesAt: []), routine: .morning)
         #expect(LockInGate.canAddHabit(to: .morning, histories: [established, abandoned]) == .open)
     }

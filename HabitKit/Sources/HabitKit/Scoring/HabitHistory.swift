@@ -11,7 +11,7 @@ public struct ScheduledOccurrence: Hashable, Sendable {
     }
 }
 
-/// A habit's completion log folded into the shape every score and rule reads from.
+/// A habit's logs folded into the shape every score and rule reads from.
 ///
 /// Today is held apart from the settled history on purpose. A habit due today that has not
 /// been done yet is not a miss, it is simply unfinished, and counting it as a miss would
@@ -20,27 +20,63 @@ public struct HabitHistory: Hashable, Sendable {
     public let habit: Habit
     public let today: DayKey
 
-    /// Days this habit was due, through yesterday, oldest first.
+    /// Lifecycle folded from the log, so paused and archived stretches can be excluded.
+    public let lifecycle: LifecycleTimeline
+
+    /// Days this habit was due and active, through yesterday, oldest first.
     public let settledOccurrences: [ScheduledOccurrence]
 
     public let isDueToday: Bool
     public let isCompletedToday: Bool
 
-    public init(habit: Habit, events: some Sequence<CompletionEvent>, today: DayKey) {
+    public init(
+        habit: Habit,
+        events: some Sequence<CompletionEvent>,
+        lifecycle lifecycleEvents: some Sequence<LifecycleEvent>,
+        today: DayKey
+    ) {
         self.habit = habit
         self.today = today
+
+        let timeline = LifecycleTimeline(startedOn: habit.startedOn, events: lifecycleEvents)
+        self.lifecycle = timeline
 
         let completedDays = Set(
             events.lazy.filter { $0.habitID == habit.id }.map(\.dayKey)
         )
 
-        let lastSettledDay = today.advanced(by: -1)
-        self.settledOccurrences = habit.startedOn.through(lastSettledDay)
-            .filter { habit.wasScheduled(on: $0) }
-            .map { ScheduledOccurrence(day: $0, isCompleted: completedDays.contains($0)) }
+        // One pass over the ordinal range. Chaining through(), filter and map allocated
+        // three arrays the size of the habit's entire lifetime, on a path that runs inside
+        // a widget extension.
+        let first = habit.startedOn.ordinal
+        let last = today.advanced(by: -1).ordinal
+        var occurrences: [ScheduledOccurrence] = []
+        if last >= first {
+            occurrences.reserveCapacity(last - first + 1)
+            for ordinal in first...last {
+                let day = DayKey(ordinal: ordinal)
+                guard habit.isScheduled(on: day), timeline.isActive(on: day) else { continue }
+                occurrences.append(
+                    ScheduledOccurrence(day: day, isCompleted: completedDays.contains(day))
+                )
+            }
+        }
+        self.settledOccurrences = occurrences
 
-        self.isDueToday = habit.isDue(on: today)
-        self.isCompletedToday = completedDays.contains(today)
+        let dueToday = habit.isScheduled(on: today) && timeline.isActive(on: today)
+        self.isDueToday = dueToday
+        // Guarded by due, so a paused row cannot draw a checkmark.
+        self.isCompletedToday = dueToday && completedDays.contains(today)
+    }
+
+    /// Convenience for a habit that has never been paused or archived.
+    public init(habit: Habit, events: some Sequence<CompletionEvent>, today: DayKey) {
+        self.init(habit: habit, events: events, lifecycle: [LifecycleEvent](), today: today)
+    }
+
+    /// The state this habit is in as of today.
+    public var currentState: LifecycleEvent.State {
+        lifecycle.state(on: today)
     }
 
     /// The settled occurrences falling on the last `days` calendar days before today.
