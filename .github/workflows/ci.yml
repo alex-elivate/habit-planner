@@ -11,17 +11,47 @@ on:
     paths:
       - 'HabitKit/**'
       - '.github/workflows/ci.yml'
+  schedule:
+    # Monday morning Apple-toolchain check, so a runner image bump or an SDK
+    # change surfaces on its own rather than on the next unrelated push.
+    - cron: '0 13 * * 1'
   workflow_dispatch:
 
-# macOS runners bill at ten times the rate of Linux, and this is a private repo,
-# so superseded runs are cancelled rather than left to finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: HabitKit
+  # HabitKit is Foundation-only value code with no Apple framework imports, so
+  # the whole suite runs on Linux. Linux minutes bill at 1x against a private
+  # repo's quota where macOS bills at 10x, which is the difference between
+  # roughly 2,000 runs a month and roughly 200.
+  linux:
+    name: HabitKit (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    defaults:
+      run:
+        working-directory: HabitKit
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record toolchain
+        run: swift --version
+
+      - name: Build
+        run: swift build --build-tests
+
+      - name: Test
+        run: swift test
+
+  # The Apple toolchain is what the app actually ships against, so it still gets
+  # checked, just not on every push. Weekly and on demand keeps this under a
+  # handful of billed minutes a month.
+  macos:
+    name: HabitKit (macOS)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     defaults:
       run:
@@ -31,8 +61,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Record toolchain
-        # Printed unconditionally so a failure caused by a runner image bump is
-        # obvious from the log rather than needing a reproduction.
         run: |
           swift --version
           xcodebuild -version
