@@ -36,6 +36,14 @@ public final class StoredCompletionEvent {
 
     public var statusRaw: String = CompletionEvent.Status.completed.rawValue
 
+    /// Who asserted this: the person, or an outside signal proposing.
+    ///
+    /// A fact about this record, not about the habit. `Habit.completionSource` cannot stand
+    /// in for it: that is mutable expectation, so flipping it would retroactively relabel
+    /// every completion ticked by hand. Added before the schema froze because a column added
+    /// afterwards leaves every record written before it permanently unattributable.
+    public var sourceRaw: String = CompletionSource.manual.rawValue
+
     /// When the habit was done. Meaningless on a retraction.
     public var occurredAt: Date = Date.distantPast
 
@@ -54,6 +62,7 @@ public final class StoredCompletionEvent {
         dayKeyRaw: Int = 0,
         slotIndex: Int = 0,
         statusRaw: String = CompletionEvent.Status.completed.rawValue,
+        sourceRaw: String = CompletionSource.manual.rawValue,
         occurredAt: Date = .distantPast,
         recordedAt: Date = .distantPast,
         timeZoneIdentifier: String = "",
@@ -65,6 +74,7 @@ public final class StoredCompletionEvent {
         self.dayKeyRaw = dayKeyRaw
         self.slotIndex = slotIndex
         self.statusRaw = statusRaw
+        self.sourceRaw = sourceRaw
         self.occurredAt = occurredAt
         self.recordedAt = recordedAt
         self.timeZoneIdentifier = timeZoneIdentifier

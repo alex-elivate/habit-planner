@@ -1,6 +1,17 @@
 import Foundation
 import HabitKit
 
+extension StoreMappingError {
+    /// Refuses a record stamped by a newer schema than this build understands.
+    static func checkVersion(_ version: Int, record: String) throws {
+        let understood = HabitSchemaV1.versionIdentifier.major
+        guard version <= understood else {
+            throw StoreMappingError.recordIsNewerThanThisBuild(
+                record: record, recordVersion: version, understood: understood)
+        }
+    }
+}
+
 // MARK: - Habit
 
 extension StoredHabit {
@@ -28,6 +39,7 @@ extension StoredHabit {
     /// habit's start day is the origin its whole history is counted from, so moving it would
     /// silently rewrite every score and gate assessment already made about it.
     public func update(from habit: Habit) {
+        schemaVersion = HabitSchemaV1.versionIdentifier.major
         let schedule = StoredSchedule.flatten(habit.schedule)
         title = habit.title
         cue = habit.cue
@@ -42,6 +54,7 @@ extension StoredHabit {
 
     public func toDomain() throws -> Habit {
         let record = "StoredHabit(\(habitID))"
+        try StoreMappingError.checkVersion(schemaVersion, record: record)
 
         guard let startedOn = DayKey(validating: startedOnRaw) else {
             throw StoreMappingError.invalidDayKey(record: record, field: "startedOnRaw", raw: startedOnRaw)
@@ -95,6 +108,7 @@ extension StoredCompletionEvent {
             dayKeyRaw: event.dayKey.rawValue,
             slotIndex: event.slotIndex,
             statusRaw: event.status.rawValue,
+            sourceRaw: event.source.rawValue,
             occurredAt: event.occurredAt,
             recordedAt: event.recordedAt,
             timeZoneIdentifier: event.timeZoneIdentifier
@@ -106,7 +120,9 @@ extension StoredCompletionEvent {
     /// Identity fields are untouched, because a resolved assertion addresses the same
     /// `(habitID, dayKey, slotIndex)` by construction. What changes is which assertion won.
     public func update(from event: CompletionEvent) {
+        schemaVersion = HabitSchemaV1.versionIdentifier.major
         statusRaw = event.status.rawValue
+        sourceRaw = event.source.rawValue
         occurredAt = event.occurredAt
         recordedAt = event.recordedAt
         timeZoneIdentifier = event.timeZoneIdentifier
@@ -114,6 +130,7 @@ extension StoredCompletionEvent {
 
     public func toDomain() throws -> CompletionEvent {
         let record = "StoredCompletionEvent(\(eventID))"
+        try StoreMappingError.checkVersion(schemaVersion, record: record)
 
         guard let dayKey = DayKey(validating: dayKeyRaw) else {
             throw StoreMappingError.invalidDayKey(record: record, field: "dayKeyRaw", raw: dayKeyRaw)
@@ -121,12 +138,16 @@ extension StoredCompletionEvent {
         guard let status = CompletionEvent.Status(rawValue: statusRaw) else {
             throw StoreMappingError.unknownRawValue(record: record, field: "statusRaw", raw: statusRaw)
         }
+        guard let source = CompletionSource(rawValue: sourceRaw) else {
+            throw StoreMappingError.unknownRawValue(record: record, field: "sourceRaw", raw: sourceRaw)
+        }
 
         let event = CompletionEvent(
             habitID: habitID,
             dayKey: dayKey,
             slotIndex: slotIndex,
             status: status,
+            source: source,
             occurredAt: occurredAt,
             recordedAt: recordedAt,
             timeZoneIdentifier: timeZoneIdentifier
@@ -158,6 +179,7 @@ extension StoredLifecycleEvent {
 
     /// Overwrites this row with the decision that won for the same day.
     public func update(from event: LifecycleEvent) {
+        schemaVersion = HabitSchemaV1.versionIdentifier.major
         stateRaw = event.state.rawValue
         occurredAt = event.occurredAt
         timeZoneIdentifier = event.timeZoneIdentifier
@@ -165,6 +187,7 @@ extension StoredLifecycleEvent {
 
     public func toDomain() throws -> LifecycleEvent {
         let record = "StoredLifecycleEvent(\(eventID))"
+        try StoreMappingError.checkVersion(schemaVersion, record: record)
 
         guard let dayKey = DayKey(validating: dayKeyRaw) else {
             throw StoreMappingError.invalidDayKey(record: record, field: "dayKeyRaw", raw: dayKeyRaw)

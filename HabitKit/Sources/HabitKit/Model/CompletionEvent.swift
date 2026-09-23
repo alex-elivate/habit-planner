@@ -34,6 +34,18 @@ public struct CompletionEvent: Identifiable, Codable, Sendable {
 
     public let status: Status
 
+    /// Who made this assertion: the person directly, or an outside signal proposing.
+    ///
+    /// A fact about this record, unlike `Habit.completionSource`, which is a mutable
+    /// expectation about the habit. That difference is why this field has to exist rather
+    /// than being read off the habit: flipping a habit to `.automatic` would otherwise
+    /// retroactively relabel every completion the person ticked by hand.
+    ///
+    /// Nothing scores it and nothing in the lock-in gate may ever read it. It is here so
+    /// history stays answerable, and because a field cannot be added to a frozen CloudKit
+    /// schema retroactively for records already written.
+    public let source: CompletionSource
+
     /// When the habit was actually done. Carries no meaning for a retraction.
     public let occurredAt: Date
 
@@ -62,6 +74,7 @@ public struct CompletionEvent: Identifiable, Codable, Sendable {
         dayKey: DayKey,
         slotIndex: Int = 0,
         status: Status = .completed,
+        source: CompletionSource = .manual,
         occurredAt: Date,
         recordedAt: Date? = nil,
         timeZoneIdentifier: String
@@ -70,6 +83,7 @@ public struct CompletionEvent: Identifiable, Codable, Sendable {
         self.dayKey = dayKey
         self.slotIndex = slotIndex
         self.status = status
+        self.source = source
         self.occurredAt = occurredAt
         self.recordedAt = recordedAt ?? occurredAt
         self.timeZoneIdentifier = timeZoneIdentifier
@@ -80,6 +94,7 @@ public struct CompletionEvent: Identifiable, Codable, Sendable {
         habitID: UUID,
         slotIndex: Int = 0,
         status: Status = .completed,
+        source: CompletionSource = .manual,
         at instant: Date,
         in timeZone: TimeZone
     ) {
@@ -88,6 +103,7 @@ public struct CompletionEvent: Identifiable, Codable, Sendable {
             dayKey: DayKey(instant, in: timeZone),
             slotIndex: slotIndex,
             status: status,
+            source: source,
             occurredAt: instant,
             recordedAt: instant,
             timeZoneIdentifier: timeZone.identifier
@@ -95,12 +111,18 @@ public struct CompletionEvent: Identifiable, Codable, Sendable {
     }
 
     /// Undoes this assertion, as of `instant`.
-    public func retracted(at instant: Date) -> CompletionEvent {
+    ///
+    /// The retraction's own source defaults to `.manual`, because undoing is something a
+    /// person does. It is not inherited from the assertion being undone: "a signal proposed
+    /// this" and "somebody took it back" are different facts, and the second is the one this
+    /// record states.
+    public func retracted(at instant: Date, source: CompletionSource = .manual) -> CompletionEvent {
         CompletionEvent(
             habitID: habitID,
             dayKey: dayKey,
             slotIndex: slotIndex,
             status: .retracted,
+            source: source,
             occurredAt: occurredAt,
             recordedAt: instant,
             timeZoneIdentifier: timeZoneIdentifier
@@ -125,31 +147,81 @@ extension CompletionEvent: Hashable {
     }
 }
 
+extension CompletionEvent {
+    /// A total order over assertions about the same day, latest last.
+    ///
+    /// Total on purpose. `max(by:)` over a partial order keeps whichever element it saw
+    /// first, so two devices folding the same three records in different arrival orders
+    /// would settle on different survivors and then overwrite each other through CloudKit
+    /// indefinitely. Every field that distinguishes two assertions is a tiebreak here, so
+    /// the fold has exactly one answer regardless of the order it meets them in.
+    static func assertedEarlier(_ lhs: CompletionEvent, _ rhs: CompletionEvent) -> Bool {
+        if lhs.recordedAt != rhs.recordedAt { return lhs.recordedAt < rhs.recordedAt }
+        // A tie means two devices asserted at the same instant. Prefer the retraction, so
+        // an undo is never lost to a coin flip.
+        if lhs.status != rhs.status { return lhs.status == .completed }
+        if lhs.occurredAt != rhs.occurredAt { return lhs.occurredAt < rhs.occurredAt }
+        if lhs.source != rhs.source { return lhs.source == .manual }
+        return lhs.timeZoneIdentifier < rhs.timeZoneIdentifier
+    }
+}
+
 extension Collection<CompletionEvent> {
     /// One assertion per habit per day, resolving corrections and sync duplicates.
     ///
-    /// Two rules, because `occurredAt` and `recordedAt` answer different questions. Status
-    /// comes from the assertion recorded last, so a retraction beats the completion it
-    /// undoes and a later re-completion beats that. The surviving `occurredAt` is the
-    /// earliest asserted, so a completion arriving twice keeps the moment the habit was
-    /// actually done rather than whenever the second device got around to syncing.
+    /// The survivor is a **merge of two pairs**, not a choice between records, because the
+    /// fields answer two different questions:
+    ///
+    /// - `status`, `source` and `recordedAt` describe *the assertion*, and come from the one
+    ///   asserted last. That is what makes a retraction beat the completion it undoes, and a later
+    ///   re-completion beat that.
+    /// - `occurredAt` and `timeZoneIdentifier` describe *the doing*, and come from the
+    ///   earliest completion asserted. A completion arriving twice keeps the moment the
+    ///   habit was actually done, and the place the person was standing, rather than
+    ///   whenever the second device got around to syncing.
+    ///
+    /// Returning the earliest record *whole* is the obvious shortcut and it is wrong. It
+    /// carries that record's `recordedAt` along with its `occurredAt`, which silently winds
+    /// the survivor's clock backwards. In memory nothing notices, because nothing reads
+    /// `recordedAt` after a fold. A store does: it persists the survivor and then resolves
+    /// the *next* conflict against it, so a stale retraction beats a newer completion and
+    /// the day flips to not-done. Two devices receiving the same records in different orders
+    /// reached different answers and fought over the row.
+    ///
+    /// The practical requirement is that folding incrementally has to equal folding the whole
+    /// set at once. Merging both pairs is what makes that true.
     public func resolved() -> [CompletionEvent] {
         Dictionary(grouping: self, by: \.id)
             .values
             .compactMap { group -> CompletionEvent? in
-                guard let latest = group.max(by: { lhs, rhs in
-                    if lhs.recordedAt != rhs.recordedAt { return lhs.recordedAt < rhs.recordedAt }
-                    // A tie means two devices asserted at the same instant. Prefer the
-                    // retraction, so an undo is never lost to a coin flip.
-                    return lhs.status == .completed && rhs.status == .retracted
-                }) else { return nil }
+                guard let latest = group.max(by: CompletionEvent.assertedEarlier) else { return nil }
 
-                guard latest.status == .completed else { return latest }
+                // Earliest across *every* assertion, not merely the completed ones.
+                //
+                // Restricting it to completions loses the moment as soon as a retraction
+                // wins, because the single surviving record is then a retraction and the
+                // original `occurredAt` is gone. A later re-completion from another device
+                // has nothing to restore it from, so the day comes back with the wrong
+                // moment and two devices disagree. `retracted(at:)` carries the completion's
+                // own `occurredAt` forward precisely so this stays available.
+                //
+                // It is also what the rule has always said: the earliest *asserted*.
+                let earliest = group.min { lhs, rhs in
+                    if lhs.occurredAt != rhs.occurredAt { return lhs.occurredAt < rhs.occurredAt }
+                    return lhs.timeZoneIdentifier < rhs.timeZoneIdentifier
+                }
+                guard let earliest else { return latest }
 
-                let earliest = group
-                    .filter { $0.status == .completed }
-                    .min(by: { $0.occurredAt < $1.occurredAt })
-                return earliest ?? latest
+                return CompletionEvent(
+                    habitID: latest.habitID,
+                    dayKey: latest.dayKey,
+                    slotIndex: latest.slotIndex,
+                    status: latest.status,
+                    source: latest.source,
+                    occurredAt: earliest.occurredAt,
+                    recordedAt: latest.recordedAt,
+                    timeZoneIdentifier: earliest.timeZoneIdentifier
+                )
             }
             .sorted { lhs, rhs in
                 if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }

@@ -22,8 +22,18 @@ public struct LoadResult<Value: Sendable>: Sendable {
 /// The only writer to the store, and the only place deduplication happens.
 ///
 /// A `@ModelActor` because `ModelContext` is not `Sendable` and Swift 6 strict concurrency is
-/// on from day one. Everything crossing the boundary is a HabitKit value type, never a
-/// `@Model` object, so nothing that is not `Sendable` can escape.
+/// on from day one. Every method here returns HabitKit value types, never `@Model` objects.
+///
+/// **That is a convention, not a compiler guarantee.** The `@ModelActor` macro synthesises a
+/// `nonisolated let modelExecutor`, and `ModelExecutor.modelContext` is a nonisolated protocol
+/// requirement, so `store.modelExecutor.modelContext` hands any caller this actor's live
+/// context with no diagnostic at all. Using it concurrently with the actor segfaults.
+///
+/// The asymmetry is what makes it easy to miss: the compiler *does* stop `mainContext`
+/// leaving the main actor, and *does* complain when a stolen context is captured in a
+/// `@Sendable` closure. It stays silent in exactly the case that matters here, pulling the
+/// context onto an actor the caller already occupies, which is the UI. The macro offers no
+/// way to suppress the member, so: **never touch `modelExecutor` from outside this type.**
 ///
 /// ### Deduplication
 ///
@@ -39,6 +49,20 @@ public struct LoadResult<Value: Sendable>: Sendable {
 @ModelActor
 public actor HabitStoreActor {
 
+    /// Saves, or discards the staged changes.
+    ///
+    /// The actor holds one context for the life of the process. Without the rollback, a
+    /// single failed save leaves its changes staged and every later save re-attempts them,
+    /// so one bad row poisons every write that follows it for as long as the app runs.
+    private func commit() throws {
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
     // MARK: - Habits
 
     /// Inserts a habit, or updates the one already carrying its identifier.
@@ -47,15 +71,29 @@ public actor HabitStoreActor {
         let existing = try modelContext.fetch(
             FetchDescriptor<StoredHabit>(predicate: #Predicate { $0.habitID == id })
         )
-        if let row = existing.first {
+        // Duplicate habit rows come from sync, and they can disagree about `startedOn`.
+        //
+        // "Keep whichever the fetch returned first" is not a rule. A `FetchDescriptor` with
+        // no `sortBy` has no defined order, and in practice it varies between runs on the
+        // same data, so two devices kept different rows, each deleted the row the other
+        // kept, and the habit's origin day flickered. `startedOn` is what the entire history
+        // is counted from: keeping the later row turned 59 settled occurrences into 4, and
+        // the lock-in gate reported `notEnoughHistory` for a routine months old.
+        //
+        // The earliest origin wins, which is both deterministic and the safe direction.
+        // Counting history the habit did not have is a smaller error than erasing history
+        // it did, and only the latter can silently lock a routine.
+        let ordered = existing.sorted { $0.startedOnRaw < $1.startedOnRaw }
+        if let row = ordered.first {
             row.update(from: habit)
-            // A duplicate habit row can only come from sync. The rows describe the same
-            // habit, so keeping the first and dropping the rest converges on every device.
-            for extra in existing.dropFirst() { modelContext.delete(extra) }
+            // Note this takes the earliest *stored* row, never the incoming habit's day.
+            // Moving an origin backwards from a caller would invent scheduled occurrences
+            // for days before the habit existed, and every one of them would be a miss.
+            for extra in ordered.dropFirst() { modelContext.delete(extra) }
         } else {
             modelContext.insert(StoredHabit(habit))
         }
-        try modelContext.save()
+        try commit()
     }
 
     public func loadHabits() throws -> LoadResult<Habit> {
@@ -108,7 +146,7 @@ public actor HabitStoreActor {
             modelContext.insert(StoredCompletionEvent(winner))
         }
 
-        try modelContext.save()
+        try commit()
         return skipped
     }
 
@@ -134,8 +172,15 @@ public actor HabitStoreActor {
         descriptor.fetchLimit = 1
         guard try modelContext.fetch(descriptor).isEmpty else { return false }
 
-        modelContext.insert(StoredCompletionEvent(event))
-        try modelContext.save()
+        // Recorded as signal-asserted whatever the caller passed. This is the proposal path
+        // by definition, and the record should say so rather than trusting a parameter.
+        let proposal = CompletionEvent(
+            habitID: event.habitID, dayKey: event.dayKey, slotIndex: event.slotIndex,
+            status: event.status, source: .automatic, occurredAt: event.occurredAt,
+            recordedAt: event.recordedAt, timeZoneIdentifier: event.timeZoneIdentifier
+        )
+        modelContext.insert(StoredCompletionEvent(proposal))
+        try commit()
         return true
     }
 
@@ -208,7 +253,7 @@ public actor HabitStoreActor {
             modelContext.insert(StoredLifecycleEvent(winner))
         }
 
-        try modelContext.save()
+        try commit()
         return skipped
     }
 
@@ -242,9 +287,18 @@ public actor HabitStoreActor {
         )
 
         let row: StoredRoutineRun
-        if let first = existing.first {
+        if let first = existing.sorted(by: { $0.runID < $1.runID }).first ?? existing.first {
             first.update(from: run)
-            for extra in existing.dropFirst() { modelContext.delete(extra) }
+            // Re-parent before deleting, never after. The losing rows hold steps this one
+            // has never seen, because each device writes the steps it witnessed, and the
+            // relationship's `.cascade` rule takes them with the row. Deleting first lost a
+            // whole device's worth of steps as a side effect, which contradicts the rule two
+            // methods down that refuses to delete even one.
+            for extra in existing where extra !== first {
+                for step in extra.steps ?? [] { step.run = first }
+                extra.steps = []
+                modelContext.delete(extra)
+            }
             row = first
         } else {
             row = StoredRoutineRun(
@@ -259,10 +313,31 @@ public actor HabitStoreActor {
             modelContext.insert(row)
         }
 
-        var byID = Dictionary(
-            (row.steps ?? []).map { ($0.stepID, $0) },
-            uniquingKeysWith: { first, _ in first }
+        // Adopt any step that arrived before its run. Without this it is unreachable
+        // forever: `loadRoutineRuns()` walks runs, and a step with a nil `run` is on no
+        // run's list. This is the same non-atomic-sync hazard that habits and events avoid
+        // by not being related at all.
+        let orphans = try modelContext.fetch(
+            FetchDescriptor<StoredRoutineStep>(predicate: #Predicate { $0.runID == id && $0.run == nil })
         )
+        for orphan in orphans { orphan.run = row }
+
+        // Collapse duplicate step rows rather than merely ignoring them. Leaving the loser
+        // in place returned the same habit twice from `toDomain()`, and `orderedSteps` then
+        // sorted two elements its comparator calls equal, so their order was not stable.
+        var byID: [String: StoredRoutineStep] = [:]
+        for step in row.steps ?? [] {
+            if let kept = byID[step.stepID] {
+                // Keep whichever knows more. A nil clock is "not reached yet", so a row
+                // carrying an end time is strictly better informed than one that is not.
+                if kept.endedAt == nil, step.endedAt != nil { kept.update(from: step.toDomain()) }
+                step.run = nil
+                modelContext.delete(step)
+            } else {
+                byID[step.stepID] = step
+            }
+        }
+
         for step in run.steps {
             let stepID = StoredRoutineStep.stepID(runID: run.id, habitID: step.habitID)
             if let existingStep = byID[stepID] {
@@ -275,7 +350,7 @@ public actor HabitStoreActor {
             }
         }
 
-        try modelContext.save()
+        try commit()
     }
 
     public func loadRoutineRuns() throws -> LoadResult<RoutineRun> {

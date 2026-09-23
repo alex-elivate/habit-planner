@@ -12,6 +12,7 @@ extension StoredRoutineStep {
         self.init(
             stepID: Self.stepID(runID: runID, habitID: step.habitID),
             habitID: step.habitID,
+            runID: runID,
             position: step.position,
             startedAt: step.startedAt,
             endedAt: step.endedAt
@@ -20,6 +21,7 @@ extension StoredRoutineStep {
 
     /// Overwrites the clock and the sequence position, never the identity.
     public func update(from step: RoutineStep) {
+        schemaVersion = HabitSchemaV1.versionIdentifier.major
         position = step.position
         startedAt = step.startedAt
         endedAt = step.endedAt
@@ -51,6 +53,7 @@ extension StoredRoutineRun {
     /// means "deleted", and under sync it can also mean "that device has not heard about it".
     /// Removing one is an explicit operation rather than a side effect of an update.
     public func update(from run: RoutineRun) {
+        schemaVersion = HabitSchemaV1.versionIdentifier.major
         routineRaw = run.routine.rawValue
         startedAt = run.startedAt
         endedAt = run.endedAt
@@ -59,6 +62,7 @@ extension StoredRoutineRun {
 
     public func toDomain() throws -> RoutineRun {
         let record = "StoredRoutineRun(\(runID))"
+        try StoreMappingError.checkVersion(schemaVersion, record: record)
 
         guard let dayKey = DayKey(validating: dayKeyRaw) else {
             throw StoreMappingError.invalidDayKey(record: record, field: "dayKeyRaw", raw: dayKeyRaw)

@@ -5,17 +5,20 @@ import SwiftData
 ///
 /// ### The split is the point
 ///
-/// `synced` goes to CloudKit. `localHealth` never does. A model belongs to exactly one of
-/// them, which is not a stylistic choice: SwiftData will not let the same type appear in two
-/// configurations of one container, so the boundary is enforced by the framework rather than
-/// by a comment.
+/// `synced` goes to CloudKit. `localHealth` never does, and a model belongs to exactly one.
+///
+/// **Nothing enforces that but these two arrays.** An earlier version of this comment said
+/// SwiftData refuses to let one type appear in two configurations. It does not: such a
+/// container builds, and a record saved through it persists. Moving a model between these
+/// arrays is an App Store 5.1.3(ii) decision, not a refactor.
 ///
 /// ### When this freezes
 ///
 /// The first promotion to the CloudKit production environment makes every record type and
 /// field here permanent. Fields may be added afterwards. Nothing may be renamed or removed.
-/// `initializeCloudKitSchema()` must therefore be run from a development build, and its
-/// output reviewed in the dashboard, before any build reaches TestFlight.
+/// SwiftData has no `initializeCloudKitSchema()`; that belongs to
+/// `NSPersistentCloudKitContainer`. Run `primeCloudKitSchema()` from a development build and
+/// review the dashboard before any build reaches TestFlight. See `CloudKitSchemaPriming`.
 public enum HabitSchemaV1: VersionedSchema {
 
     public static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }

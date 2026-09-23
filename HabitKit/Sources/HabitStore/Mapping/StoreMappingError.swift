@@ -25,6 +25,14 @@ public enum StoreMappingError: Error, Hashable, CustomStringConvertible {
     /// routine it belongs to stays shut permanently, with nothing on screen explaining why.
     case malformedScheduleMask(record: String, raw: Int)
 
+    /// A record written by a newer version of the app than this one understands.
+    ///
+    /// Reported rather than read. The danger is not failing to show it, it is reading it
+    /// through a mapping that does not know about its newer fields and then writing that
+    /// loss back over the original. A record this build cannot represent is one it must not
+    /// touch. `schemaVersion` existed for this from the first commit and did nothing.
+    case recordIsNewerThanThisBuild(record: String, recordVersion: Int, understood: Int)
+
     /// A stored identifier that disagrees with the content it is supposed to address.
     ///
     /// Deduplication rests entirely on that identifier being derivable from the record, so a
@@ -41,6 +49,8 @@ public enum StoreMappingError: Error, Hashable, CustomStringConvertible {
             return "\(record).\(field): '\(raw)' has no matching case"
         case .malformedScheduleMask(let record, let raw):
             return "\(record).scheduleDayMask: \(raw) is empty or has bits outside the seven weekdays"
+        case .recordIsNewerThanThisBuild(let record, let recordVersion, let understood):
+            return "\(record): written by schema version \(recordVersion), this build understands \(understood)"
         case .identifierMismatch(let record, let stored, let derived):
             return "\(record): stored id '\(stored)' does not address its content '\(derived)'"
         }

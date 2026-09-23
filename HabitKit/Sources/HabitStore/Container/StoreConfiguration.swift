@@ -1,6 +1,19 @@
 import Foundation
 import SwiftData
 
+/// Why a store could not be opened.
+public enum StoreConfigurationError: Error, CustomStringConvertible {
+    /// A syncing role was asked for without a CloudKit container identifier.
+    case missingCloudKitContainerID
+
+    public var description: String {
+        switch self {
+        case .missingCloudKitContainerID:
+            return "A syncing store needs a CloudKit container identifier. Pass StoreIdentifiers explicitly."
+        }
+    }
+}
+
 /// The identifiers the store needs from the app bundle.
 ///
 /// Injected rather than hardcoded, because the CloudKit container identifier is derived from
@@ -60,9 +73,17 @@ public enum StorePlatform: Hashable, Sendable {
 /// Builds the `ModelContainer` each platform is allowed to have.
 ///
 /// One container, two configurations. The synced configuration replicates to the private
-/// CloudKit database. The health configuration never leaves the device. A model type belongs
-/// to exactly one of them, and SwiftData refuses to let a type appear in both, so the
-/// boundary is enforced by the framework rather than by review.
+/// CloudKit database. The health configuration never leaves the device.
+///
+/// **The framework does not enforce that split.** An earlier version of this comment claimed
+/// SwiftData refuses to let one model type appear in two configurations. It does not: a
+/// container built with `StoredHealthBinding` in both configurations is accepted, and a
+/// binding saved through it persists without complaint.
+///
+/// So the only thing keeping a drug identifier out of iCloud is that `StoredHealthBinding`
+/// is absent from `HabitSchemaV1.synced`. That is a convention with tests behind it, not a
+/// guarantee, and the tests have to be the kind that would actually notice. Anyone moving a
+/// model between those two arrays is making an App Store 5.1.3(ii) decision.
 public enum HabitStoreContainer {
 
     public static let syncedStoreName = "HabitStore"
@@ -80,6 +101,13 @@ public enum HabitStoreContainer {
     /// The downgrade lives here rather than in a call site's `#if` so that no future call
     /// site can get it wrong. The watch bridges to the phone over WatchConnectivity instead.
     public static func resolved(for role: StoreRole, platform: StorePlatform = .current) -> StoreRole {
+        #if os(watchOS)
+        // A hard floor underneath the parameter. `platform` exists so the rule can be tested
+        // from a Mac, and a default argument is overridable, so a watch build could pass
+        // `.other` and reach CloudKit. On an actual watch there is no such thing as a
+        // non-watch platform, and this makes that unarguable.
+        if role == .syncingApp { return .localApp }
+        #endif
         guard platform == .watch else { return role }
         return role == .syncingApp ? .localApp : role
     }
@@ -124,9 +152,13 @@ public enum HabitStoreContainer {
 
     /// The configuration for the models that never reach iCloud.
     ///
-    /// `.none` on every platform, with no role able to change that. It is also kept out of
-    /// the App Group: widgets have no use for a health binding, and the narrower the file is
-    /// shared, the less there is to get wrong later.
+    /// `.none` on every platform, with no role able to change that.
+    ///
+    /// `groupContainer` is passed explicitly rather than left to default. Omitting it means
+    /// `.automatic`, which inspects entitlements and quietly moves the store *into* the App
+    /// Group as soon as one ships for widget sharing. That would put a stored drug
+    /// identifier in the container the widget extension can read, which is the opposite of
+    /// what this store is for. Widgets have no use for a binding.
     public static func healthConfiguration(
         role: StoreRole,
         platform: StorePlatform = .current
@@ -146,7 +178,8 @@ public enum HabitStoreContainer {
             healthStoreName,
             schema: schema,
             isStoredInMemoryOnly: false,
-            allowsSave: true,
+            allowsSave: role != .readOnlyWidget,
+            groupContainer: .none,
             cloudKitDatabase: .none
         )
     }
@@ -157,7 +190,16 @@ public enum HabitStoreContainer {
         identifiers: StoreIdentifiers = StoreIdentifiers(cloudKitContainerID: ""),
         platform: StorePlatform = .current
     ) throws -> ModelContainer {
-        try ModelContainer(
+        // The default identifier is empty, and an empty CloudKit container name is accepted
+        // silently by `ModelConfiguration`. This is the one call that brings the production
+        // container into existence, so a forgotten argument here is a mistake that cannot be
+        // taken back. Local and in-memory roles legitimately need no identifier.
+        if resolved(for: role, platform: platform) == .syncingApp,
+           identifiers.cloudKitContainerID.isEmpty {
+            throw StoreConfigurationError.missingCloudKitContainerID
+        }
+
+        return try ModelContainer(
             for: Schema(HabitSchemaV1.models, version: HabitSchemaV1.versionIdentifier),
             migrationPlan: HabitMigrationPlan.self,
             configurations: syncedConfiguration(role: role, identifiers: identifiers, platform: platform),

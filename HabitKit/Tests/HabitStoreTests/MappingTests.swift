@@ -27,6 +27,13 @@ struct MappingTests {
         let restored = try StoredHabit(habit).toDomain()
         #expect(restored.schedule == .daysOfWeek(days))
         #expect(days.count == mask.nonzeroBitCount)
+
+        // Cross-checked against the domain's own encoding rather than only against the
+        // store's inverse. Composing `mask(for:)` with `days(from:)` is symmetric by
+        // construction, so on its own it would pass under a completely reversed layout.
+        let encoded = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(Schedule.daysOfWeek(days))) as! [String: Any]
+        #expect(encoded["days"] as? Int == mask)
     }
 
     @Test("A completion survives the round trip, including both clocks")
@@ -91,11 +98,11 @@ struct MappingTests {
 
     // MARK: The stored spelling is pinned to the domain's own
 
-    @Test("Stored schedule kinds match what the domain encodes")
-    func scheduleKindsMatchDomainEncoding() throws {
-        // The store flattens `Schedule` by hand into two columns that freeze with the CloudKit
-        // schema. This pins those spellings to the domain's hand-written Codable, so the two
-        // cannot drift apart once nobody is reading both files at once.
+    @Test("Stored schedule kinds and bit positions match what the domain encodes")
+    func scheduleEncodingMatchesTheDomain() throws {
+        // The store flattens `Schedule` by hand into two columns that freeze with the
+        // CloudKit schema. This pins those spellings to the domain's hand-written Codable so
+        // the two cannot drift apart once nobody is reading both files at once.
         func encoded(_ schedule: Schedule) throws -> [String: Any] {
             let data = try JSONEncoder().encode(schedule)
             return try JSONSerialization.jsonObject(with: data) as! [String: Any]
@@ -104,10 +111,33 @@ struct MappingTests {
         let daily = try encoded(.daily)
         #expect(daily["kind"] as? String == StoredSchedule.Kind.daily.rawValue)
 
-        let days: Set<Weekday> = [.tuesday, .thursday]
+        // Deliberately asymmetric. The previous version used [.tuesday, .thursday], whose
+        // bits are {2,4} forward and {4,2} reversed — identical. Reversing the entire layout
+        // to `1 << (7 - rawValue)` passed the whole suite, and this is the only test pinning
+        // a layout that becomes permanent on CloudKit promotion.
+        let days: Set<Weekday> = [.monday, .tuesday]
         let weekly = try encoded(.daysOfWeek(days))
         #expect(weekly["kind"] as? String == StoredSchedule.Kind.daysOfWeek.rawValue)
         #expect(weekly["days"] as? Int == StoredSchedule.mask(for: days))
+    }
+
+    @Test("Each weekday sits on a named, frozen bit")
+    func weekdayBitPositionsAreFrozen() {
+        // Spelled out as numbers rather than derived, because a derivation shares any bug
+        // with the code it is checking. Sunday is bit 0 through Saturday at bit 6, matching
+        // Weekday's Calendar-aligned numbering.
+        #expect(StoredSchedule.mask(for: [.sunday]) == 1)
+        #expect(StoredSchedule.mask(for: [.monday]) == 2)
+        #expect(StoredSchedule.mask(for: [.tuesday]) == 4)
+        #expect(StoredSchedule.mask(for: [.wednesday]) == 8)
+        #expect(StoredSchedule.mask(for: [.thursday]) == 16)
+        #expect(StoredSchedule.mask(for: [.friday]) == 32)
+        #expect(StoredSchedule.mask(for: [.saturday]) == 64)
+        #expect(StoredSchedule.validMask == 127)
+
+        #expect(StoredSchedule.days(from: 1) == [.sunday])
+        #expect(StoredSchedule.days(from: 64) == [.saturday])
+        #expect(StoredSchedule.days(from: 6) == [.monday, .tuesday])
     }
 
     // MARK: Rejections

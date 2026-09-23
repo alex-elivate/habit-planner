@@ -208,4 +208,96 @@ struct RegressionTests {
         #expect(history.settledOccurrences.count == 10)
     }
 
+
+    @Test("Folding assertions one at a time equals folding them all at once")
+    func incrementalFoldEqualsBatchFold() {
+        // A store folds incrementally: it holds one row per identifier and merges each new
+        // assertion into it. That only agrees with the domain if the fold is associative and
+        // order-independent. It was not. `resolved()` returned the earliest completion whole,
+        // carrying that record's `recordedAt` as well as its `occurredAt`, which wound the
+        // survivor's clock backwards. Nothing in memory reads `recordedAt` after a fold, so
+        // it was invisible until a store resolved the next conflict against the result and a
+        // stale retraction beat a newer completion.
+        //
+        // Note the comparison is field by field. `CompletionEvent.==` delegates to `id`, so
+        // every assertion about one day compares equal and an `==` test here proves nothing.
+        func fields(_ e: CompletionEvent?) -> String {
+            guard let e else { return "nil" }
+            return "\(e.status)|\(e.occurredAt.timeIntervalSince1970)|\(e.recordedAt.timeIntervalSince1970)|\(e.timeZoneIdentifier)"
+        }
+        func incremental(_ events: [CompletionEvent]) -> CompletionEvent? {
+            var held: [CompletionEvent] = []
+            for event in events { held = ([event] + held).resolved() }
+            return held.first
+        }
+
+        let habitID = UUID()
+        let day = referenceToday.advanced(by: -1)
+        func assertion(_ status: CompletionEvent.Status, occurred: Double, recorded: Double,
+                       zone: String = "UTC") -> CompletionEvent {
+            CompletionEvent(habitID: habitID, dayKey: day, status: status,
+                            occurredAt: Date(timeIntervalSince1970: occurred),
+                            recordedAt: Date(timeIntervalSince1970: recorded),
+                            timeZoneIdentifier: zone)
+        }
+
+        // Brute force rather than argue: every ordering of every small assertion set.
+        var sets: [[CompletionEvent]] = []
+        for occurred in [0.0, 3_600.0] {
+            for recorded in [0.0, 1_800.0, 3_600.0] {
+                for status in CompletionEvent.Status.allCases {
+                    sets.append([
+                        assertion(.completed, occurred: 0, recorded: 0),
+                        assertion(.retracted, occurred: 0, recorded: 1_800),
+                        assertion(status, occurred: occurred, recorded: recorded, zone: "Europe/London")
+                    ])
+                }
+            }
+        }
+
+        for set in sets {
+            let batch = fields(set.resolved().first)
+            for ordering in permutations(of: set) {
+                #expect(fields(ordering.resolved().first) == batch,
+                        "batch fold depends on order: \(batch)")
+                #expect(fields(incremental(ordering)) == batch,
+                        "incremental fold disagrees with batch: \(fields(incremental(ordering))) vs \(batch)")
+            }
+        }
+    }
+
+    @Test("A stale retraction cannot beat a newer completion")
+    func staleRetractionLosesToNewerCompletion() {
+        // The concrete shape: the watch ticks at 07:00, the phone undoes it at 07:30, and the
+        // Mac, which never saw the undo, ticks again at 08:00. Last writer wins, so the day
+        // is done.
+        let habitID = UUID()
+        let day = referenceToday.advanced(by: -1)
+        let tick = CompletionEvent(habitID: habitID, dayKey: day, occurredAt: Date(timeIntervalSince1970: 0),
+                                   recordedAt: Date(timeIntervalSince1970: 0), timeZoneIdentifier: "UTC")
+        let undo = tick.retracted(at: Date(timeIntervalSince1970: 1_800))
+        let again = CompletionEvent(habitID: habitID, dayKey: day,
+                                    occurredAt: Date(timeIntervalSince1970: 3_600),
+                                    recordedAt: Date(timeIntervalSince1970: 3_600), timeZoneIdentifier: "UTC")
+
+        let resolved = [tick, undo, again].resolved().first
+        #expect(resolved?.status == .completed)
+        // The moment kept is when it was first done, not when it was re-asserted.
+        #expect(resolved?.occurredAt == Date(timeIntervalSince1970: 0))
+        // The clock that decides future conflicts is the newest assertion's.
+        #expect(resolved?.recordedAt == Date(timeIntervalSince1970: 3_600))
+    }
+
+}
+
+/// Every ordering of `items`. Used to prove a fold does not depend on arrival order.
+func permutations<T>(of items: [T]) -> [[T]] {
+    guard items.count > 1 else { return [items] }
+    var result: [[T]] = []
+    for (index, item) in items.enumerated() {
+        var rest = items
+        rest.remove(at: index)
+        for tail in permutations(of: rest) { result.append([item] + tail) }
+    }
+    return result
 }

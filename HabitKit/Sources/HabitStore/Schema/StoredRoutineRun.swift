@@ -81,6 +81,15 @@ public final class StoredRoutineStep {
 
     public var habitID: UUID = UUID()
 
+    /// The run this step belongs to, as a plain value alongside the relationship.
+    ///
+    /// Redundant with `stepID`, which already embeds it, and with `run`. It earns the column
+    /// because it is the only way to *find* a step whose run has not arrived. CloudKit does
+    /// not save related changes atomically, so a step can sync ahead of its run, and a step
+    /// with a nil `run` is invisible to a fetch that starts from runs. Without this it stays
+    /// invisible forever, because nothing can locate it to reattach it.
+    public var runID: String = ""
+
     /// Where this step fell in the sequence actually presented. Nothing keys on it.
     public var position: Int = 0
 
@@ -96,6 +105,7 @@ public final class StoredRoutineStep {
     public init(
         stepID: String = "",
         habitID: UUID = UUID(),
+        runID: String = "",
         position: Int = 0,
         startedAt: Date? = nil,
         endedAt: Date? = nil,
@@ -105,6 +115,7 @@ public final class StoredRoutineStep {
     ) {
         self.stepID = stepID
         self.habitID = habitID
+        self.runID = runID
         self.position = position
         self.startedAt = startedAt
         self.endedAt = endedAt

@@ -10,7 +10,7 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phases 1 and 2 of 8 are complete: the domain layer and the persistence layer, with 100 tests.
+Phases 1 and 2 of 8 are complete: the domain layer and the persistence layer, with 129 tests.
 No app targets exist yet.
 
 ## Platforms
@@ -122,8 +122,15 @@ A completion the app writes after a health signal proposed it stays in the synce
 the app's own record of a confirmation rather than a copy of a health sample, and that is the
 line the split is drawn on.
 
-SwiftData will not let one model type appear in two configurations, so the boundary is
-enforced by the framework rather than by review.
+Nothing in the framework enforces that split. An earlier version of this section claimed
+SwiftData refuses to let one model type appear in two configurations. It does not. A container
+built that way is accepted, and a record saved through it persists without complaint.
+
+So the boundary is these two arrays and the tests behind them. Moving a model between them is
+an App Store decision rather than a refactor, and the test that guards it has to be the kind
+that would actually notice. Asserting `cloudKitContainerIdentifier == nil` does not: that
+property reads `nil` for a store that does not sync and for one that syncs automatically, so
+the obvious assertion stays green while the drug identifier replicates to iCloud.
 
 ### Deduplication without unique constraints
 
@@ -138,6 +145,20 @@ tomorrow.
 Both call into HabitKit rather than reimplementing the rule. Two copies of a subtle precedence
 rule that have to agree forever will stop agreeing.
 
+The rule itself has to survive being applied one record at a time. A store does not fold a set,
+it folds the incoming assertion into the single row it already holds, so folding incrementally
+has to give the same answer as folding everything at once. That is why the survivor is a merge
+of two pairs rather than a choice between records. Status, source and `recordedAt` describe the
+assertion and come from the one made last. `occurredAt` and the time zone describe the doing and
+come from the earliest asserted.
+
+Returning the earliest record whole is the obvious shortcut and it is wrong, because it carries
+that record's `recordedAt` along with its `occurredAt` and winds the survivor's clock backwards.
+In memory nobody notices, since nothing reads `recordedAt` after a fold. A store notices: it
+resolves the next conflict against the result, so a stale retraction beats a newer completion
+and the day flips to not done. Two devices receiving the same records in a different order
+reached different answers and then fought over the row.
+
 ### Habits and their events are not related records
 
 They are joined by a plain identifier instead. CloudKit does not guarantee that related
@@ -146,6 +167,17 @@ record that is merely early. As a relationship it would be an orphan.
 
 A routine run and its steps are the exception and do use a relationship, because they are
 written together in one save on one device and a step means nothing without its run.
+
+### Every completion says who asserted it
+
+A record carries whether the person ticked it or a signal proposed it. `Habit.completionSource`
+cannot answer that question, because it is a mutable expectation about the habit rather than a
+fact about the record, so flipping a habit to automatic would retroactively relabel every
+completion ticked by hand.
+
+The field is here now because a column added after the schema freezes leaves every record
+written before it permanently unattributable. Nothing scores it, and the lock-in gate may never
+read it.
 
 ### An outside signal may only fill a blank
 
@@ -181,6 +213,14 @@ So `primeCloudKitSchema()` writes one record of every synced type with every fie
 then deletes them. The deletions sync. The schema they created does not go away. Run it once
 from a development build, confirm every type and field in the CloudKit dashboard, and only then
 promote.
+
+Guarding that is harder than it looks. The first attempt read its own source file and checked
+that eight field names appeared somewhere in it, which passed when a field was genuinely
+missing. Reflection is no help either, because a model's stored values live in its backing data
+and `Mirror` reports them as absent whatever they were set to. What works is deriving the list
+of optional columns from SwiftData's own schema at runtime and comparing it to an explicit
+expected list. Adding an optional to a synced model then fails that comparison immediately,
+which forces whoever added it to go and populate it.
 
 Every model also carries a `schemaVersion` and a spare `payloadJSON`, because the cheapest time
 to add an escape hatch is before the thing it protects is immutable.

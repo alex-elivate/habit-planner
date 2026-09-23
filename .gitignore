@@ -20,3 +20,6 @@ xcuserdata/
 
 # Local agent context, not a committed artifact
 CLAUDE.md
+
+# Agent worktrees
+.claude/
