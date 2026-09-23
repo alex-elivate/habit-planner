@@ -22,7 +22,7 @@ jobs:
         working-directory: HabitKit
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Record toolchain
         # Printed unconditionally so a failure caused by a runner image bump is
