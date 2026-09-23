@@ -403,8 +403,53 @@ public actor HabitStoreActor {
             do { values.append(try row.toDomain()) }
             catch let error as StoreMappingError { skipped.append(error) }
         }
-        values.sort { $0.habitID.uuidString < $1.habitID.uuidString }
-        return LoadResult(values: values, skipped: skipped)
+        // One binding per habit, chosen the same way on every launch. The app keys bindings by
+        // habit, and a second row for the same habit trapped that dictionary on every launch.
+        // The furthest-reconciled row wins, so a duplicate can never send the backfill back
+        // over days already covered; the rest of the order only has to be total.
+        let unique = Dictionary(grouping: values, by: \.habitID).values.compactMap { group in
+            group.max { lhs, rhs in
+                if lhs.lastReconciledDay != rhs.lastReconciledDay {
+                    return lhs.lastReconciledDay < rhs.lastReconciledDay
+                }
+                if lhs.signal != rhs.signal { return lhs.signal.rawValue < rhs.signal.rawValue }
+                return (lhs.externalIdentifier ?? "") < (rhs.externalIdentifier ?? "")
+            }
+        }
+        return LoadResult(
+            values: unique.sorted { $0.habitID.uuidString < $1.habitID.uuidString },
+            skipped: skipped
+        )
+    }
+
+    /// Records that the backfill has covered `binding` through `day`.
+    ///
+    /// Updates only a row that still describes the same signal, and never inserts one. The
+    /// backfill queries Health between reading the binding and writing this, and a plain
+    /// upsert of the copy it read would bring back a binding the person had just removed, or
+    /// overwrite the new one if they had relinked the habit to something else meanwhile.
+    ///
+    /// Also never moves backwards, so two overlapping backfills cannot undo each other.
+    ///
+    /// - Returns: whether a row was advanced.
+    @discardableResult
+    public func advanceReconciliation(of binding: HealthBinding, through day: DayKey) throws -> Bool {
+        let id = binding.habitID
+        let signal = binding.signal.rawValue
+        let rows = try modelContext.fetch(
+            FetchDescriptor<StoredHealthBinding>(predicate: #Predicate { $0.habitID == id })
+        )
+        var advanced = false
+        for row in rows
+        where row.signalRaw == signal
+            && row.externalIdentifier == binding.externalIdentifier
+            && row.lastReconciledDayRaw < day.rawValue {
+            row.lastReconciledDayRaw = day.rawValue
+            advanced = true
+        }
+        guard advanced else { return false }
+        try commit()
+        return true
     }
 
     // MARK: - The fold

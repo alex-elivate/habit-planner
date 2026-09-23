@@ -43,7 +43,7 @@ final class HealthService {
 
     // MARK: - Medications
 
-    struct Medication: Identifiable, Hashable {
+    nonisolated struct Medication: Identifiable, Hashable, Sendable {
         /// The archived concept identifier. Opaque, and never shown.
         let id: String
         let name: String
@@ -62,25 +62,48 @@ final class HealthService {
     }
 
     func sharedMedications() async throws -> [Medication] {
-        try await withCheckedThrowingContinuation { continuation in
-            var found: [Medication] = []
+        let collector = MedicationCollector()
+        return try await withCheckedThrowingContinuation { continuation in
+            collector.continuation = continuation
             let query = HKUserAnnotatedMedicationQuery(predicate: nil, limit: HKObjectQueryNoLimit) {
                 _, medication, done, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                if let medication, !medication.isArchived,
-                   let id = Self.archive(medication.medication.identifier) {
-                    found.append(Medication(id: id, name: medication.nickname ?? medication.medication.displayText))
-                }
-                if done { continuation.resume(returning: found) }
+                collector.receive(medication, done: done, error: error)
             }
             store.execute(query)
         }
     }
 
-    static func archive(_ identifier: HKHealthConceptIdentifier) -> String? {
+    /// Gathers the query's callbacks and resumes the caller exactly once.
+    ///
+    /// The header promises a final callback with `done` set, and says nothing about whether an
+    /// error ends the sequence. Resuming on the error and again on `done` would crash, so the
+    /// first terminal callback wins and anything after it is ignored.
+    private nonisolated final class MedicationCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var found: [Medication] = []
+        var continuation: CheckedContinuation<[Medication], any Error>?
+
+        func receive(_ medication: HKUserAnnotatedMedication?, done: Bool, error: (any Error)?) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let continuation else { return }
+            if let error {
+                self.continuation = nil
+                continuation.resume(throwing: error)
+                return
+            }
+            if let medication, !medication.isArchived,
+               let id = HealthService.archive(medication.medication.identifier) {
+                found.append(Medication(id: id, name: medication.nickname ?? medication.medication.displayText))
+            }
+            if done {
+                self.continuation = nil
+                continuation.resume(returning: found)
+            }
+        }
+    }
+
+    nonisolated static func archive(_ identifier: HKHealthConceptIdentifier) -> String? {
         try? NSKeyedArchiver.archivedData(withRootObject: identifier, requiringSecureCoding: true)
             .base64EncodedString()
     }

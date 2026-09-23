@@ -50,7 +50,10 @@ final class AppModel {
                 runs.values.filter { $0.dayKey == today }.map { ($0.routine, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
-            self.bindings = Dictionary(uniqueKeysWithValues: bindings.values.map { ($0.habitID, $0) })
+            // The store already returns one binding per habit. Not trapping here anyway, since
+            // a duplicate key would otherwise crash every launch.
+            self.bindings = Dictionary(bindings.values.map { ($0.habitID, $0) },
+                                       uniquingKeysWith: { first, _ in first })
             unreadable = loaded.skipped + runs.skipped + bindings.skipped
         } catch {
             failure = "Could not read your habits. \(error.localizedDescription)"
@@ -85,10 +88,28 @@ final class AppModel {
         histories.first { $0.habit.id == habitID }
     }
 
-    /// Whether a new habit may join `routine`, with the assessment behind a refusal.
-    func gate(for routine: RoutineSlot) -> (decision: LockInGate.Decision, judged: LockInGate.Assessment?) {
-        let decision = LockInGate.canAddHabit(to: routine, histories: histories)
-        guard case .blocked = decision else { return (decision, nil) }
+    /// Whether a new habit may join `routine`, and why not.
+    enum Gate {
+        case open
+        case blocked(LockInGate.Assessment?)
+        /// A record the gate depends on could not be read, so no answer is trustworthy.
+        case unreadable
+
+        var isOpen: Bool {
+            if case .open = self { return true }
+            return false
+        }
+    }
+
+    /// Records whose absence could open the gate. Their routine cannot be known without
+    /// reading them, so any one of them holds every routine shut.
+    var gateHasUnreadableInput: Bool { unreadable.contains(where: \.couldOpenGate) }
+
+    func gate(for routine: RoutineSlot) -> Gate {
+        // An unreadable newest habit drops out of the fold, and the gate would then judge an
+        // older one that has already bedded in and open. Refusing is the safe direction.
+        if gateHasUnreadableInput { return .unreadable }
+        guard !LockInGate.canAddHabit(to: routine, histories: histories).isOpen else { return .open }
         // The same selection the gate makes, so the progress shown is the habit actually judged.
         let judged = histories
             .filter { $0.habit.routine == routine && $0.currentState == .active }
@@ -97,7 +118,7 @@ final class AppModel {
                 return lhs.habit.id.uuidString < rhs.habit.id.uuidString
             }
             .map(LockInGate.assess)
-        return (decision, judged)
+        return .blocked(judged)
     }
 
     /// Whether `routine` has anything left to run today.
@@ -108,20 +129,30 @@ final class AppModel {
 
     // MARK: - Completions
 
-    /// Ticks or un-ticks today from the list. Un-ticking appends a retraction.
+    /// Ticks or un-ticks the day the row shows. Un-ticking appends a retraction.
+    ///
+    /// Both directions write to the day the row was folded for, not to a day worked out from
+    /// the clock. In the minutes between midnight and the next reload the two differ, and a
+    /// tick landing on a different day from the un-tick beside it would be a correction that
+    /// corrects nothing.
     func toggleToday(_ habitID: UUID) async {
         guard let history = history(for: habitID), history.isDueToday else { return }
+        let day = history.today
+        let now = Date.now
         await write {
             if history.isCompletedToday {
-                try await store.retract(habitID: habitID, dayKey: today, at: .now,
+                try await store.retract(habitID: habitID, dayKey: day, at: now,
                                         timeZoneIdentifier: timeZone.identifier)
             } else {
-                try await store.record(CompletionEvent(habitID: habitID, at: .now, in: timeZone))
+                try await store.record(CompletionEvent(habitID: habitID, dayKey: day, occurredAt: now,
+                                                       timeZoneIdentifier: timeZone.identifier))
             }
         }
     }
 
-    func record(_ event: CompletionEvent) async {
+    /// Records an assertion. Returns whether it reached the store.
+    @discardableResult
+    func record(_ event: CompletionEvent) async -> Bool {
         await write { try await store.record(event) }
     }
 
@@ -133,7 +164,14 @@ final class AppModel {
 
     enum AddHabitError: LocalizedError {
         case gateClosed
-        var errorDescription: String? { "This routine's newest habit has not bedded in yet." }
+        case unreadable
+
+        var errorDescription: String? {
+            switch self {
+            case .gateClosed: "This routine's newest habit has not bedded in yet."
+            case .unreadable: "Some habits were saved by a newer version of the app. Update this device to add habits."
+            }
+        }
     }
 
     /// Adds a habit to the end of its routine, if the lock-in gate allows it.
@@ -142,8 +180,8 @@ final class AppModel {
     /// a fold that may be a sync behind.
     func add(_ draft: HabitDraft) async throws {
         await reload()
-        guard LockInGate.canAddHabit(to: draft.routine, histories: histories).isOpen else {
-            throw AddHabitError.gateClosed
+        guard gate(for: draft.routine).isOpen else {
+            throw gateHasUnreadableInput ? AddHabitError.unreadable : AddHabitError.gateClosed
         }
         let nextOrder = (habits(in: draft.routine).map(\.habit.order).max() ?? -1) + 1
         let habit = Habit(
@@ -192,8 +230,12 @@ final class AppModel {
     func link(_ habitID: UUID, signal: HealthSignal, externalIdentifier: String?) async {
         guard var habit = history(for: habitID)?.habit else { return }
         habit.completionSource = .automatic
+        // Reconciled through yesterday, so the link day itself is covered once it settles. A
+        // walk the morning the habit was linked is still that habit's walk, and starting at
+        // today would lose it for good if the runner was not opened that day.
         let binding = HealthBinding(habitID: habitID, signal: signal,
-                                    externalIdentifier: externalIdentifier, lastReconciledDay: today)
+                                    externalIdentifier: externalIdentifier,
+                                    lastReconciledDay: today.advanced(by: -1))
         await write {
             try await store.upsert(binding)
             try await store.upsert(habit)
@@ -224,10 +266,10 @@ final class AppModel {
                 let instants = try await health.signalInstants(for: binding, in: interval)
                 let proposals = HealthBackfill.proposals(for: history, in: days, signalInstants: instants,
                                                          recordedAt: .now, timeZone: timeZone)
-                var caughtUp = binding
-                caughtUp.lastReconciledDay = days.upperBound
                 for proposal in proposals { try await store.propose(proposal) }
-                try await store.upsert(caughtUp)
+                // Not an upsert of the copy read before the query. The person may have
+                // unlinked or relinked the habit while Health was answering.
+                try await store.advanceReconciliation(of: binding, through: days.upperBound)
             } catch {
                 // Not advanced, so the same days are tried again next launch. Health being
                 // unreachable is not evidence that nothing happened.
@@ -245,13 +287,40 @@ final class AppModel {
 
     // MARK: -
 
-    private func write(_ body: () async throws -> Void) async {
+    /// Runs a write, reports a failure, and reloads either way. Returns whether it succeeded.
+    @discardableResult
+    private func write(_ body: () async throws -> Void) async -> Bool {
+        var succeeded = true
         do {
             try await body()
         } catch {
             failure = error.localizedDescription
+            succeeded = false
         }
         await reload()
+        return succeeded
+    }
+
+    // MARK: - Refresh
+
+    @ObservationIgnored private var refreshing: Task<Void, Never>?
+
+    /// Reload, backfill from Health, and replan reminders, one pass at a time.
+    ///
+    /// Launch and becoming active both ask for this at once. Run side by side, each reminder
+    /// pass read the pending list, cleared it and added its own plan, and a plan built from
+    /// older data could add back a reminder the newer one had dropped. Each pass now waits
+    /// for the one before it.
+    func refresh(health: HealthService, reminders: ReminderSettings) async {
+        let previous = refreshing
+        let pass = Task {
+            await previous?.value
+            await reload()
+            await reconcileHealth(using: health)
+            await ReminderScheduler.reschedule(model: self, settings: reminders)
+        }
+        refreshing = pass
+        await pass.value
     }
 }
 

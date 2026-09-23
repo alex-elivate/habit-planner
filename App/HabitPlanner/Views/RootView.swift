@@ -32,14 +32,14 @@ struct RootView: View {
         }
         .task {
             model.observeRemoteChanges()
-            await model.reload()
-            await model.reconcileHealth(using: health)
-            await ReminderScheduler.reschedule(model: model, settings: reminders)
+            await model.refresh(health: health, reminders: reminders)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { refresh() }
         }
-        .onChange(of: router.requestedRoutine) { _, routine in
+        // Initial as well, because a reminder tapped on a cold launch can set this before the
+        // view first observes it, and a change that happened earlier never fires.
+        .onChange(of: router.requestedRoutine, initial: true) { _, routine in
             guard let routine else { return }
             router.requestedRoutine = nil
             running = routine
@@ -51,10 +51,6 @@ struct RootView: View {
     }
 
     private func refresh() {
-        Task {
-            await model.reload()
-            await model.reconcileHealth(using: health)
-            await ReminderScheduler.reschedule(model: model, settings: reminders)
-        }
+        Task { await model.refresh(health: health, reminders: reminders) }
     }
 }

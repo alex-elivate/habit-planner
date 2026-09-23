@@ -11,19 +11,25 @@ struct RunnerView: View {
 
     @State private var runner: RoutineRunner?
     @State private var total = 0
-    @State private var healthOffer: Date?
+    /// What Health reported, and for which habit. Keyed so an answer that arrives after the
+    /// person has moved on can never be offered against the next habit.
+    @State private var healthOffer: (habitID: UUID, at: Date)?
     /// Writes are chained so a fast double tap cannot land a run update before its completion.
     @State private var writes: Task<Void, Never>?
+    /// Bumped when a write fails, so writes queued after it are dropped with the state they
+    /// were made from.
+    @State private var generation = 0
 
     var body: some View {
         NavigationStack {
             Group {
                 if let runner {
                     if let habitID = runner.currentHabitID, let history = model.history(for: habitID) {
-                        StepView(habit: history.habit, healthOffer: healthOffer,
+                        let offer = healthOffer?.habitID == habitID ? healthOffer?.at : nil
+                        StepView(habit: history.habit, healthOffer: offer,
                                  bindingName: bindingName(for: habitID),
                                  done: { complete(occurredAt: nil) },
-                                 countHealth: { complete(occurredAt: healthOffer) },
+                                 countHealth: { complete(occurredAt: offer) },
                                  skip: skip)
                             .id(habitID)
                             .transition(.push(from: .trailing))
@@ -59,12 +65,21 @@ struct RunnerView: View {
             }
         }
         .sensoryFeedback(.success, trigger: runner?.passed.count ?? 0) { old, new in new > old }
-        .onAppear(perform: plan)
+        .task { await plan() }
     }
 
     // MARK: - Transitions
 
-    private func plan() {
+    /// Plans from a fresh fold, never from whatever the model held last.
+    ///
+    /// A reminder usually opens this after the app sat suspended, so the model can still hold
+    /// yesterday: yesterday's run, folded for yesterday. Planning from that resumed yesterday's
+    /// run and wrote this morning's completions to the day before. On a cold launch the model
+    /// is empty and the routine read as already done. Reloading first rules out both, and a
+    /// reload keeps only today's runs.
+    private func plan() async {
+        guard runner == nil else { return }
+        await model.reload()
         guard runner == nil else { return }
         let planned = RoutineRunner(routine: routine, histories: model.histories,
                                     resuming: model.runsToday[routine], at: .now, in: model.timeZone)
@@ -74,9 +89,10 @@ struct RunnerView: View {
     }
 
     private func complete(occurredAt: Date?) {
+        let before = runner
         let source: CompletionSource = occurredAt == nil ? .manual : .automatic
         let event = runner?.complete(at: .now, occurredAt: occurredAt, source: source)
-        persist(event)
+        persist(event, rollingBackTo: before)
     }
 
     private func skip() {
@@ -85,16 +101,28 @@ struct RunnerView: View {
     }
 
     private func undo() {
+        let before = runner
         let retraction = runner?.undo(at: .now)
-        persist(retraction)
+        persist(retraction, rollingBackTo: before)
     }
 
-    private func persist(_ event: CompletionEvent?) {
+    /// Writes the assertion, then the run, in that order.
+    ///
+    /// If the assertion does not reach the store the run is not written either, and the
+    /// runner goes back to where it was. Otherwise the step would be saved as passed with no
+    /// completion behind it, never offered again, and the habit quietly skipped.
+    private func persist(_ event: CompletionEvent?, rollingBackTo before: RoutineRunner? = nil) {
         guard let run = runner?.run, runner?.hasSteps == true else { return }
         let previous = writes
+        let expected = generation
         writes = Task {
             await previous?.value
-            if let event { await model.record(event) }
+            guard generation == expected else { return }
+            if let event, await model.record(event) == false {
+                generation += 1
+                if let before { runner = before }
+                return
+            }
             await model.save(run)
         }
     }
@@ -114,10 +142,11 @@ struct RunnerView: View {
     /// A foreground query answers at once, unlike background delivery. An offer is only ever
     /// an offer: the person confirms it, and an empty answer offers nothing.
     private func checkHealth(_ habitID: UUID) async {
-        healthOffer = nil
         guard let binding = model.bindings[habitID], let day = runner?.run.dayKey else { return }
         let interval = DateInterval(start: day.start(in: model.timeZone), end: .now)
-        healthOffer = try? await health.signalInstants(for: binding, in: interval).first
+        let found = try? await health.signalInstants(for: binding, in: interval).first
+        guard !Task.isCancelled, runner?.currentHabitID == habitID, let found else { return }
+        healthOffer = (habitID, found)
     }
 }
 

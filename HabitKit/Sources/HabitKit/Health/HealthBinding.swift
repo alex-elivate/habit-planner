@@ -24,8 +24,8 @@ public struct HealthBinding: Hashable, Sendable {
 
     /// The last day the launch backfill has already covered.
     ///
-    /// Starts at the day the binding was made, so linking a habit to Health never rewrites the
-    /// history before the link existed.
+    /// Starts at the day before the binding was made. The link day itself is covered once it
+    /// settles, and nothing earlier is ever rewritten.
     public var lastReconciledDay: DayKey
 
     public init(
