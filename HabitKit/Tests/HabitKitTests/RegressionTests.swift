@@ -82,13 +82,18 @@ struct RegressionTests {
         #expect(assessment.decision == .blocked(.recentDoubleMiss(secondMissOn: DayKey(year: 2026, month: 9, day: 7))))
     }
 
-    @Test("Pausing your newest habit does not lock the routine forever")
-    func pausedHabitDoesNotBlock() {
-        // A paused habit's occurrence count is frozen, so while it stayed a candidate it
-        // could never reach 28 and archiving it was the only way out.
+    @Test("Pausing your newest habit holds the gate, and archiving it releases it")
+    func pausedHabitStillBlocks() {
+        // Decided in Phase 3. Releasing the gate on pause let the person pause, add another,
+        // and resume, leaving two habits bedding in at once. Archiving is the way out, and
+        // restoring is gated like adding. See `canRestore`.
         let established = makeHistory(pattern(length: 60, missesAt: []))
         let paused = makeHistory(pattern(length: 10, missesAt: []), state: .paused)
-        #expect(LockInGate.canAddHabit(to: .morning, histories: [established, paused]) == .open)
+        #expect(LockInGate.canAddHabit(to: .morning, histories: [established, paused])
+            == .blocked(.notEnoughHistory(elapsed: 10, required: 28)))
+
+        let archived = makeHistory(pattern(length: 10, missesAt: []), state: .archived)
+        #expect(LockInGate.canAddHabit(to: .morning, histories: [established, archived]) == .open)
     }
 
     // MARK: Stored shapes

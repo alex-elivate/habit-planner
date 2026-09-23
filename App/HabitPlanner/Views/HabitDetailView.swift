@@ -64,9 +64,17 @@ struct HabitDetailView: View {
                     Button("Restore", systemImage: "arrow.uturn.backward") {
                         Task { await model.setState(.active, for: habitID) }
                     }
+                    .disabled(!model.canRestore(habitID))
                 }
             } footer: {
-                Text("Paused days are not counted against you. Archiving keeps the history and removes the habit from your routine.")
+                switch history.currentState {
+                case .archived where !model.canRestore(habitID):
+                    Text("Restoring works like adding a habit. It can come back once the routine's newest habit beds in.")
+                case .archived:
+                    Text("Restoring puts it back at the end of the routine's queue for bedding in.")
+                default:
+                    Text("Paused days are not counted against you. A paused habit that has not bedded in still holds the routine's next slot. Archiving frees it and keeps the history.")
+                }
             }
         }
         .navigationTitle(habit.title)

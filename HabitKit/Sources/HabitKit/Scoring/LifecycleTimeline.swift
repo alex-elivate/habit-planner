@@ -53,4 +53,21 @@ public struct LifecycleTimeline: Hashable, Sendable {
     public func isActive(on day: DayKey) -> Bool {
         state(on: day) == .active
     }
+
+    /// The day this habit joined its routine, as of `day`, for the lock-in gate's ordering.
+    ///
+    /// Its start day, unless it has since been restored from the archive, in which case the
+    /// day of the most recent restore. Restoring is adding the habit back, so it queues behind
+    /// everything already in the routine and is the one the gate judges next. Resuming from a
+    /// pause does not move it, because a paused habit never left the gate's view.
+    public func joinedRoutine(asOf day: DayKey) -> DayKey {
+        var joined = startedOn
+        var previous = LifecycleEvent.State.active
+        for transition in transitions {
+            guard transition.day <= day else { break }
+            if previous == .archived, transition.state != .archived { joined = transition.day }
+            previous = transition.state
+        }
+        return joined
+    }
 }

@@ -29,24 +29,32 @@ public struct HabitHistory: Hashable, Sendable {
     public let isDueToday: Bool
     public let isCompletedToday: Bool
 
+    /// Days counted as done, corrections applied. Kept so the fold can be rerun for a changed
+    /// habit without the raw log.
+    private let completedDays: Set<DayKey>
+
     public init(
         habit: Habit,
         events: some Sequence<CompletionEvent>,
         lifecycle lifecycleEvents: some Sequence<LifecycleEvent>,
         today: DayKey
     ) {
-        self.habit = habit
-        self.today = today
-
         let timeline = LifecycleTimeline(
             habitID: habit.id,
             startedOn: habit.startedOn,
             events: lifecycleEvents
         )
-        self.lifecycle = timeline
 
         // Corrections applied, so a retracted tick does not count as done.
-        let completedDays = Array(events).completedDays(for: habit.id)
+        self.init(habit: habit, completedDays: Array(events).completedDays(for: habit.id),
+                  lifecycle: timeline, today: today)
+    }
+
+    private init(habit: Habit, completedDays: Set<DayKey>, lifecycle timeline: LifecycleTimeline, today: DayKey) {
+        self.habit = habit
+        self.today = today
+        self.lifecycle = timeline
+        self.completedDays = completedDays
 
         // One pass over the ordinal range. Chaining through(), filter and map allocated
         // three arrays the size of the habit's entire lifetime, on a path that runs inside
@@ -78,6 +86,14 @@ public struct HabitHistory: Hashable, Sendable {
     }
 
     /// The state this habit is in as of today.
+    /// The same history folded for a changed habit, such as a proposed schedule edit.
+    ///
+    /// Answers "what would the gate say if this were saved" without a store round trip.
+    public func replacing(_ habit: Habit) -> HabitHistory {
+        precondition(habit.id == self.habit.id, "A history can only be refolded for its own habit")
+        return HabitHistory(habit: habit, completedDays: completedDays, lifecycle: lifecycle, today: today)
+    }
+
     public var currentState: LifecycleEvent.State {
         lifecycle.state(on: today)
     }

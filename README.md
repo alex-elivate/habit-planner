@@ -75,6 +75,17 @@ Counting occurrences rather than calendar days means a three-times-a-week habit 
 
 That range is the point. Clear deliberately avoids naming a number of days. The study he cites, Lally et al. (2010), found a mean near 66 days across a range of 18 to 254. The familiar 21-day figure traces back to Maxwell Maltz's observations of plastic surgery patients and describes nothing about habits.
 
+Only the habit that most recently joined the routine is judged. Three rules keep that from being
+sidestepped:
+
+- **A paused habit still holds the gate.** Otherwise the person could pause the newest habit, add
+  another, and resume, leaving two bedding in at once. Archiving is what releases it.
+- **Restoring from the archive works like adding.** It is allowed when the gate is open or the
+  habit had already bedded in, and a restored habit rejoins the routine on the day it comes back.
+- **A schedule change may not open a shut gate.** Nothing derived is stored, so changing a daily
+  habit to three days a week re-judges every past day, and missed off-days stop counting as
+  misses. That is allowed except where it would unlock the routine early.
+
 ### Never miss twice
 
 One miss costs you the day but leaves the streak standing. Two consecutive misses end it. After a single miss the app enters a visible recovery state, because the second miss is where habits actually die.

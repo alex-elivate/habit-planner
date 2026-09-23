@@ -90,31 +90,82 @@ public enum LockInGate {
 
     /// Whether a new habit may be added to `routine`.
     ///
-    /// Only the most recently started *active* habit in the routine is examined. Older habits
-    /// have already earned their place, and re-judging them would mean one rough week
-    /// retroactively locking a routine the person built months ago. Paused and archived
-    /// habits are skipped: a paused habit's occurrence count is frozen, so leaving it in the
-    /// running let it block the routine permanently, with archiving the only escape.
+    /// Only the habit that most recently joined the routine is examined. Older habits have
+    /// already earned their place, and re-judging them would mean one rough week
+    /// retroactively locking a routine the person built months ago.
+    ///
+    /// A **paused** habit is still examined. Pausing is not a way past the gate: if pausing
+    /// the newest habit released it, the person could add another, resume the first, and have
+    /// two habits bedding in at once. A paused habit that has not bedded in therefore holds
+    /// the routine until it is resumed and beds in, or is archived.
+    ///
+    /// An **archived** habit is out of the routine and never examined. Restoring one is
+    /// adding it back, so it joins the routine on the day of the restore and becomes the habit
+    /// judged next. See `canRestore(_:histories:)` for when that is allowed.
     public static func canAddHabit(
         to routine: RoutineSlot,
         histories: some Sequence<HabitHistory>
     ) -> Decision {
+        guard let newest = judged(in: routine, histories: histories) else {
+            return .open  // The first habit in an empty routine is never gated.
+        }
+        return assess(newest).decision
+    }
+
+    /// The habit `canAddHabit` judges for `routine`, or `nil` if the routine is empty.
+    public static func judged(
+        in routine: RoutineSlot,
+        histories: some Sequence<HabitHistory>
+    ) -> HabitHistory? {
         let candidates = histories.filter {
-            $0.habit.routine == routine && $0.currentState == .active
+            $0.habit.routine == routine && $0.currentState != .archived
         }
         // Ties break on the identifier, never on `order`. Display position is mutable, so
         // tiebreaking on it meant dragging a row could change which habit was judged and
         // open an irreversible gate. Falling back on sequence order instead would have made
         // the answer depend on an unordered SwiftData fetch.
-        guard let newest = candidates.max(by: { lhs, rhs in
-            if lhs.habit.startedOn != rhs.habit.startedOn {
-                return lhs.habit.startedOn < rhs.habit.startedOn
-            }
+        return candidates.max { lhs, rhs in
+            let left = lhs.lifecycle.joinedRoutine(asOf: lhs.today)
+            let right = rhs.lifecycle.joinedRoutine(asOf: rhs.today)
+            if left != right { return left < right }
             return lhs.habit.id.uuidString < rhs.habit.id.uuidString
-        }) else {
-            return .open  // The first habit in an empty routine is never gated.
         }
-        return assess(newest).decision
+    }
+
+    /// Whether an archived habit may be restored to its routine.
+    ///
+    /// Restoring is adding a habit back, so it passes the same gate as adding one: allowed
+    /// when a new habit could be added, or when the habit being restored had already bedded
+    /// in before it was archived. Without this, archiving a habit that had not bedded in,
+    /// adding another, and restoring the first would leave two bedding in at once.
+    public static func canRestore(
+        _ habit: HabitHistory,
+        histories: some Sequence<HabitHistory>
+    ) -> Bool {
+        let others = histories.filter { $0.habit.id != habit.habit.id }
+        return canAddHabit(to: habit.habit.routine, histories: others).isOpen || assess(habit).isLockedIn
+    }
+
+    /// Whether changing a habit to `schedule` may be saved.
+    ///
+    /// A schedule change re-judges every past day against the new schedule, because nothing
+    /// derived is stored. Missed Tuesdays stop being misses once the habit is only due on
+    /// Mondays. Allowed freely except where it would open a gate that is currently shut:
+    /// then it would be a way of editing a habit into having bedded in.
+    public static func allowsScheduleChange(
+        of habitID: UUID,
+        to schedule: Schedule,
+        histories: some Sequence<HabitHistory>
+    ) -> Bool {
+        let all = Array(histories)
+        guard let current = all.first(where: { $0.habit.id == habitID }) else { return true }
+        let routine = current.habit.routine
+        guard !canAddHabit(to: routine, histories: all).isOpen else { return true }
+
+        var changed = current.habit
+        changed.schedule = schedule
+        let proposed = all.map { $0.habit.id == habitID ? $0.replacing(changed) : $0 }
+        return !canAddHabit(to: routine, histories: proposed).isOpen
     }
 
     /// The day of the second miss in the first consecutive pair landing inside the window.

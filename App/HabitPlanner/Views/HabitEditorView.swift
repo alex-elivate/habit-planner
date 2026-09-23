@@ -82,8 +82,12 @@ struct HabitEditorView: View {
                     refusal = error.localizedDescription
                 }
             case .edit(let id):
-                await model.update(id, from: draft)
-                dismiss()
+                do {
+                    try await model.update(id, from: draft)
+                    dismiss()
+                } catch {
+                    refusal = error.localizedDescription
+                }
             }
         }
     }

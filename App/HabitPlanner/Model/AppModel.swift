@@ -110,15 +110,8 @@ final class AppModel {
         // older one that has already bedded in and open. Refusing is the safe direction.
         if gateHasUnreadableInput { return .unreadable }
         guard !LockInGate.canAddHabit(to: routine, histories: histories).isOpen else { return .open }
-        // The same selection the gate makes, so the progress shown is the habit actually judged.
-        let judged = histories
-            .filter { $0.habit.routine == routine && $0.currentState == .active }
-            .max { lhs, rhs in
-                if lhs.habit.startedOn != rhs.habit.startedOn { return lhs.habit.startedOn < rhs.habit.startedOn }
-                return lhs.habit.id.uuidString < rhs.habit.id.uuidString
-            }
-            .map(LockInGate.assess)
-        return .blocked(judged)
+        // The gate's own selection, so the progress shown is the habit actually judged.
+        return .blocked(LockInGate.judged(in: routine, histories: histories).map(LockInGate.assess))
     }
 
     /// Whether `routine` has anything left to run today.
@@ -165,11 +158,15 @@ final class AppModel {
     enum AddHabitError: LocalizedError {
         case gateClosed
         case unreadable
+        case restoreGated
+        case scheduleWouldOpenGate
 
         var errorDescription: String? {
             switch self {
             case .gateClosed: "This routine's newest habit has not bedded in yet."
             case .unreadable: "Some habits were saved by a newer version of the app. Update this device to add habits."
+            case .restoreGated: "Restoring works like adding a habit. It can come back once the routine's newest habit beds in."
+            case .scheduleWouldOpenGate: "This change would count past misses as rest days and unlock the routine early. Change it once this habit has bedded in."
             }
         }
     }
@@ -197,8 +194,14 @@ final class AppModel {
         await write { try await store.upsert(habit) }
     }
 
-    func update(_ habitID: UUID, from draft: HabitDraft) async {
+    func update(_ habitID: UUID, from draft: HabitDraft) async throws {
         guard var habit = history(for: habitID)?.habit else { return }
+        // A schedule change re-judges every past day. Refused where that would open the gate.
+        if draft.schedule != habit.schedule {
+            guard !gateHasUnreadableInput,
+                  LockInGate.allowsScheduleChange(of: habitID, to: draft.schedule, histories: histories)
+            else { throw AddHabitError.scheduleWouldOpenGate }
+        }
         habit.title = draft.title.nilIfBlank ?? draft.title
         habit.cue = draft.cue.nilIfBlank
         habit.twoMinuteVersion = draft.twoMinuteVersion.nilIfBlank
@@ -219,7 +222,17 @@ final class AppModel {
         }
     }
 
+    /// Whether an archived habit may come back now. Restoring is gated like adding.
+    func canRestore(_ habitID: UUID) -> Bool {
+        guard !gateHasUnreadableInput, let history = history(for: habitID) else { return false }
+        return LockInGate.canRestore(history, histories: histories)
+    }
+
     func setState(_ state: LifecycleEvent.State, for habitID: UUID) async {
+        if state != .archived, history(for: habitID)?.currentState == .archived, !canRestore(habitID) {
+            failure = AddHabitError.restoreGated.localizedDescription
+            return
+        }
         await write {
             try await store.record(LifecycleEvent(habitID: habitID, state: state, at: .now, in: timeZone))
         }
