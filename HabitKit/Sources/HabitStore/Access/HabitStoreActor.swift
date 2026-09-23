@@ -365,6 +365,48 @@ public actor HabitStoreActor {
         return LoadResult(values: values, skipped: skipped)
     }
 
+    // MARK: - Health bindings
+
+    /// Saves the binding for `binding.habitID`, replacing any other.
+    ///
+    /// A binding is configuration on this device, not a log, so replacing it is correct. It
+    /// never syncs, which also means there is no peer whose duplicate could arrive later, but
+    /// duplicates are still collapsed in case an earlier build left one.
+    public func upsert(_ binding: HealthBinding) throws {
+        let id = binding.habitID
+        let existing = try modelContext.fetch(
+            FetchDescriptor<StoredHealthBinding>(predicate: #Predicate { $0.habitID == id })
+        )
+        if let row = existing.first {
+            row.update(from: binding)
+            for extra in existing.dropFirst() { modelContext.delete(extra) }
+        } else {
+            modelContext.insert(StoredHealthBinding(binding))
+        }
+        try commit()
+    }
+
+    /// Unlinks a habit from Health. Its completions, including any Health proposed, stay.
+    public func removeHealthBinding(for habitID: UUID) throws {
+        let rows = try modelContext.fetch(
+            FetchDescriptor<StoredHealthBinding>(predicate: #Predicate { $0.habitID == habitID })
+        )
+        for row in rows { modelContext.delete(row) }
+        try commit()
+    }
+
+    public func loadHealthBindings() throws -> LoadResult<HealthBinding> {
+        let rows = try modelContext.fetch(FetchDescriptor<StoredHealthBinding>())
+        var values: [HealthBinding] = []
+        var skipped: [StoreMappingError] = []
+        for row in rows {
+            do { values.append(try row.toDomain()) }
+            catch let error as StoreMappingError { skipped.append(error) }
+        }
+        values.sort { $0.habitID.uuidString < $1.habitID.uuidString }
+        return LoadResult(values: values, skipped: skipped)
+    }
+
     // MARK: - The fold
 
     /// Every habit's logs folded into the shape scoring and the lock-in gate read from.
