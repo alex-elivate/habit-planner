@@ -28,6 +28,10 @@ final class AppModel {
 
     private var remoteChanges: (any NSObjectProtocol)?
 
+    /// Runs after every successful reload, which follows every write and every change CloudKit
+    /// delivers. The watch bridge sends a snapshot from here.
+    @ObservationIgnored var afterReload: (() -> Void)?
+
     init(store: HabitStoreActor, mode: StoreMode) {
         self.store = store
         self.mode = mode
@@ -55,6 +59,7 @@ final class AppModel {
             self.bindings = Dictionary(bindings.values.map { ($0.habitID, $0) },
                                        uniquingKeysWith: { first, _ in first })
             unreadable = loaded.skipped + runs.skipped + bindings.skipped
+            afterReload?()
         } catch {
             failure = "Could not read your habits. \(error.localizedDescription)"
         }
@@ -370,21 +375,5 @@ extension String {
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-}
-
-extension RoutineSlot {
-    var title: String {
-        switch self {
-        case .morning: "Morning"
-        case .evening: "Evening"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .morning: "sunrise"
-        case .evening: "moon.stars"
-        }
     }
 }

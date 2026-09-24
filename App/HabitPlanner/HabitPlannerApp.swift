@@ -19,6 +19,7 @@ struct HabitPlannerApp: App {
                     .environment(delegate.router)
                     .environment(launch.reminders)
                     .environment(launch.health)
+                    .environment(launch.bridge)
             case .failed(let message):
                 StoreFailureView(message: message)
             }
@@ -41,6 +42,9 @@ final class Launch {
     let state: State
     let reminders = ReminderSettings()
     let health = HealthService()
+    /// `nil` in the in-memory mode. Demo habits sent to a watch would stay in its replica for
+    /// good. See `StoreMode.bridges`.
+    private(set) var bridge: PhoneBridge?
 
     init() {
         let mode = StoreMode.current
@@ -48,9 +52,21 @@ final class Launch {
             let container = try mode.makeContainer()
             let model = AppModel(store: HabitStoreActor(modelContainer: container), mode: mode)
             state = .ready(model)
+            if mode.bridges {
+                let bridge = PhoneBridge(model: model)
+                bridge.start()
+                self.bridge = bridge
+            }
             #if DEBUG
-            if case .inMemory(seeded: true) = mode {
-                Task { await DemoData.seed(into: model) }
+            if mode.isSeeded {
+                Task {
+                    // Once only in the persistent local mode, which would otherwise gain a
+                    // second copy of every demo habit on each launch.
+                    if (try? await model.store.loadHabits().values.isEmpty) == true {
+                        await DemoData.seed(into: model.store, timeZone: model.timeZone)
+                    }
+                    await model.reload()
+                }
             }
             #endif
         } catch {

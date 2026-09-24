@@ -49,7 +49,7 @@ final class ReminderSettings {
 /// is no bookkeeping about which reminders already exist.
 enum ReminderScheduler {
     static let identifierPrefix = "routine."
-    nonisolated static let routineKey = "routine"
+    nonisolated static let routineKey = RoutineSlot.notificationKey
 
     static func requestPermission() async -> Bool {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false

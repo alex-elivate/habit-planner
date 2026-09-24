@@ -2,10 +2,6 @@ import HabitKit
 import SwiftUI
 import UIKit
 
-extension RoutineSlot: @retroactive Identifiable {
-    public var id: String { rawValue }
-}
-
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router

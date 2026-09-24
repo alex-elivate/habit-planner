@@ -10,9 +10,10 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phase 3 of 8 is in progress: the iOS app and routine runner are built and tested on the
-simulator, with 164 package tests and 3 UI tests. Not yet verified on a physical iPhone, and the
-CloudKit schema has not been primed or promoted. See [Before the first TestFlight build](#before-the-first-testflight-build).
+Phase 4 of 8 is in progress: the watchOS app and its bridge to the iPhone are built, with 199
+package tests. Phase 3's iOS app is built and tested on the simulator. Neither has run on a
+physical device yet, and the CloudKit schema has not been primed or promoted. See
+[Before the first TestFlight build](#before-the-first-testflight-build).
 
 ## Platforms
 
@@ -44,7 +45,7 @@ Target topology is one multiplatform app target for iPhone, iPad, and Mac, plus 
 
 **The watch never talks to CloudKit.** Apple has an acknowledged bug (FB17685611) where SwiftData with CloudKit sync terminates the watch app 30 to 60 seconds into an extended runtime session when the iPhone is disconnected. That is the exact condition this app needs to work in, since the whole point is running a routine with your phone in another room. There is also a documented history of watch CloudKit sync degrading to hours, or working only while the watch is charging, because sync is scheduled by a system daemon with no override available to apps.
 
-So the watch keeps a local store and bridges to the phone over WatchConnectivity. Completions go up through `transferUserInfo`, which queues and survives being out of range. Routine definitions and the current score come down through `updateApplicationContext`. Only the iPhone and Mac write to CloudKit.
+So the watch keeps a local store and bridges to the phone over WatchConnectivity. See [The watch](#the-watch). Only the iPhone and Mac write to CloudKit.
 
 ### Nothing derived is stored
 
@@ -273,6 +274,65 @@ day somebody un-ticked stays un-ticked.
 
 The link itself, which for a medication names a drug, is stored only in the local health store.
 
+## The watch
+
+`App/HabitPlannerWatch/` is a watchOS app embedded in the iOS app. It runs routines and nothing
+else. Habits are added, edited and gated on the phone.
+
+### A replica, not a summary
+
+The watch holds every record the phone holds, apart from Health bindings, and folds them with
+the same HabitKit code. The alternative was for the phone to send a computed score and streak,
+which is derived state computed on another device at another moment. The watch would show it
+confidently long after it stopped being true.
+
+### Two files, one in each direction
+
+The phone sends a `WatchSnapshot` with every habit, completion, lifecycle event and recent run.
+The watch sends a `WatchReport` with every completion and run from a window of recent days.
+Both travel by `transferFile`, which queues and waits out the phone being in another room.
+
+The plan had been `updateApplicationContext` and `transferUserInfo`. Both have undocumented
+size limits, and a snapshot of every completion outgrows them within a year of daily use.
+Files have no such limit. Each side cancels any transfer still waiting before it queues the
+next, because the new file contains everything the old one did.
+
+### Merging, never replacing
+
+Neither side ever swaps its store for what arrives. It merges, through the same rules CloudKit
+delivery already goes through: completions fold on `recordedAt`, lifecycle keeps the later
+decision. So a snapshot built before the phone heard about a tick on the watch cannot erase
+that tick, and a tick the phone has since undone arrives back as undone.
+
+Runs merge by `RoutineRun.merged(with:)`, which keeps the earliest start and the latest end of
+every step. A late copy with a step still open can therefore never reopen one the other device
+closed. The cost is that an undo in the runner does not carry across to the other device's
+copy of the run. The retraction it wrote does, so the habit still reads as not done everywhere.
+
+Merging something the store already knows writes nothing. On the phone every rewritten row is a
+CloudKit upload, and a report arrives after every step of a watch routine.
+
+### Nothing the watch writes is lost on the way
+
+The watch writes its store first and builds the report from it afterwards. The window reaches
+back to yesterday, to every day with a report still waiting, and to the earliest write the
+phone has not yet confirmed receiving. That last one covers the app being killed between a tick
+and its report.
+
+On the phone, a report is moved into an inbox on disk before it is read, and deleted only once
+merged. One from a newer watch app waits there until the phone updates. One that can never be
+read is moved aside rather than deleted.
+
+### Demo data never crosses
+
+Neither app activates the bridge in the in-memory debug mode. Demo habits sent to a watch would
+sit in its replica for good, and anything sent back would reach CloudKit.
+
+### Reminders
+
+The watch schedules none of its own. The phone's reminder is forwarded to the wrist when the
+phone is locked, and tapping it opens the watch runner on that routine.
+
 ## Getting started
 
 ```bash
@@ -289,6 +349,16 @@ arguments in the scheme (debug builds only). The UI tests use the same arguments
 cd App
 xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlanner -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
+
+The watch app has its own scheme and UI tests, which run on any watch simulator:
+
+```bash
+xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlannerWatch -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)'
+```
+
+`-LocalStore` (debug only) opens a persistent phone store that does not sync but does bridge
+to the watch, since an unsigned simulator build cannot open the syncing one. It is only
+useful on devices, for the reason in step 7 below.
 
 ### Before the first TestFlight build
 
@@ -307,6 +377,15 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 4. **Promote** the schema to production. After this, fields can be added and never renamed or
    removed.
 5. **Verify sync from a Release archive** on two devices. A Debug run is not evidence.
+6. **Watch App ID.** The first signed build registers `org.trusler.habitplanner.watchkitapp`
+   through automatic signing. It needs no capabilities: the watch has no iCloud, no App Group
+   and no HealthKit.
+7. **Verify the watch bridge on real hardware.** Run a routine on the watch with the phone in
+   another room, then bring it back and check the ticks arrive on the phone and in iCloud.
+   This cannot be done on simulators: the watchOS Simulator does not support `transferFile`,
+   so both sides report a transfer delivered and the receiving app never hears of it. The
+   bridge logs to the `org.trusler.habitplanner` subsystem, category `bridge`, on both
+   devices.
 
 ## Roadmap
 
@@ -314,8 +393,8 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 |---|---|---|
 | 1 | HabitKit domain package | Done |
 | 2 | SwiftData persistence and CloudKit schema | Done |
-| 3 | iOS app and routine runner | In progress |
-| 4 | watchOS app and sync bridge | |
+| 3 | iOS app and routine runner | Built, awaiting device checks |
+| 4 | watchOS app and sync bridge | In progress |
 | 5 | Widgets and watch complication | |
 | 6 | App Intents, Siri, Shortcuts | |
 | 7 | macOS app and reporting | |
