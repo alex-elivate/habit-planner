@@ -10,8 +10,9 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phases 1 and 2 of 8 are complete: the domain layer and the persistence layer, with 129 tests.
-No app targets exist yet.
+Phase 3 of 8 is in progress: the iOS app and routine runner are built and tested on the
+simulator, with 164 package tests and 3 UI tests. Not yet verified on a physical iPhone, and the
+CloudKit schema has not been primed or promoted. See [Before the first TestFlight build](#before-the-first-testflight-build).
 
 ## Platforms
 
@@ -73,6 +74,17 @@ A habit unlocks the right to add another when, across the trailing 28 **schedule
 Counting occurrences rather than calendar days means a three-times-a-week habit is judged on the same terms as a daily one. Left to run, this lands somewhere in the four to ten week range.
 
 That range is the point. Clear deliberately avoids naming a number of days. The study he cites, Lally et al. (2010), found a mean near 66 days across a range of 18 to 254. The familiar 21-day figure traces back to Maxwell Maltz's observations of plastic surgery patients and describes nothing about habits.
+
+Only the habit that most recently joined the routine is judged. Three rules keep that from being
+sidestepped:
+
+- **A paused habit still holds the gate.** Otherwise the person could pause the newest habit, add
+  another, and resume, leaving two bedding in at once. Archiving is what releases it.
+- **Restoring from the archive works like adding.** It is allowed when the gate is open or the
+  habit had already bedded in, and a restored habit rejoins the routine on the day it comes back.
+- **A schedule change may not open a shut gate.** Nothing derived is stored, so changing a daily
+  habit to three days a week re-judges every past day, and missed off-days stop counting as
+  misses. That is allowed except where it would unlock the routine early.
 
 ### Never miss twice
 
@@ -225,6 +237,42 @@ which forces whoever added it to go and populate it.
 Every model also carries a `schemaVersion` and a spare `payloadJSON`, because the cheapest time
 to add an escape hatch is before the thing it protects is immutable.
 
+## The app
+
+`App/HabitPlanner.xcodeproj` holds the iOS target and its UI tests. The project uses
+folder-synchronized groups, so adding a Swift file under `App/HabitPlanner/` needs no project
+edit. Identifiers live in one place, `AppIdentifiers.swift`.
+
+### The runner
+
+A routine shows one habit at a time. Done records a completion and moves on. Skip records
+nothing, so once the day settles it reads as a miss, and until then the habit can still be
+ticked from the list. Back returns to the step just passed and retracts it if it was done.
+
+Whether a step was done or skipped is not stored on the run. The completion log already
+answers it, and a second copy would be one more thing that could disagree after a correction.
+
+Completions land on the run's day, so an evening routine that runs past midnight still counts
+for the evening it began. Closing mid-routine and reopening resumes at the first step not yet
+passed.
+
+### Reminders
+
+Reminders are planned per day from each habit's schedule, 14 days ahead, and replanned every
+time the app opens or a habit changes. A day with nothing due gets no reminder, and today's
+drops out once the routine is finished. Reminder times are a per-device preference and live in
+`UserDefaults`, not in the synced schema.
+
+### Apple Health
+
+A habit can be linked to a workout type or to one medication. When that habit comes up in the
+runner, the app queries Health in the foreground and offers to count it. The person confirms.
+On launch, a backfill proposes completions for settled days the app was never opened, capped at
+seven days and never earlier than the day the link was made. It goes through `propose`, so a
+day somebody un-ticked stays un-ticked.
+
+The link itself, which for a medication names a drug, is stored only in the local health store.
+
 ## Getting started
 
 ```bash
@@ -232,7 +280,33 @@ cd HabitKit
 swift test
 ```
 
-That runs both targets. The package has no dependencies and the suite runs in milliseconds. That speed is deliberate. It is what keeps open the option of dropping SwiftData later if the CloudKit pairing proves unworkable.
+That runs both package targets. The package has no dependencies and the suite runs in milliseconds. That speed is deliberate. It is what keeps open the option of dropping SwiftData later if the CloudKit pairing proves unworkable.
+
+To run the app with sample data and no iCloud, enable the `-InMemoryStore` and `-SeedDemoData`
+arguments in the scheme (debug builds only). The UI tests use the same arguments:
+
+```bash
+cd App
+xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlanner -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+### Before the first TestFlight build
+
+These steps touch the Apple Developer account and cannot be undone, so they are manual.
+
+1. **Capabilities.** The App ID already has iCloud and App Groups. The first signed device build
+   from Xcode will ask to add HealthKit and Push Notifications to it. Push is how CloudKit
+   delivers changes from other devices.
+2. **Prime the schema.** Run a Debug build on a device signed into iCloud. Open Settings,
+   Developer, Prime CloudKit schema.
+3. **Check the dashboard.** In the CloudKit console, development environment of
+   `iCloud.org.trusler.habitplanner`, confirm the record types `CD_StoredHabit`,
+   `CD_StoredCompletionEvent`, `CD_StoredLifecycleEvent`, `CD_StoredRoutineRun` and
+   `CD_StoredRoutineStep` exist with every field. There must be no record type for the health
+   binding.
+4. **Promote** the schema to production. After this, fields can be added and never renamed or
+   removed.
+5. **Verify sync from a Release archive** on two devices. A Debug run is not evidence.
 
 ## Roadmap
 
@@ -240,7 +314,7 @@ That runs both targets. The package has no dependencies and the suite runs in mi
 |---|---|---|
 | 1 | HabitKit domain package | Done |
 | 2 | SwiftData persistence and CloudKit schema | Done |
-| 3 | iOS app and routine runner | Next |
+| 3 | iOS app and routine runner | In progress |
 | 4 | watchOS app and sync bridge | |
 | 5 | Widgets and watch complication | |
 | 6 | App Intents, Siri, Shortcuts | |

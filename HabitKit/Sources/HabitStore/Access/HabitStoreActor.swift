@@ -365,6 +365,93 @@ public actor HabitStoreActor {
         return LoadResult(values: values, skipped: skipped)
     }
 
+    // MARK: - Health bindings
+
+    /// Saves the binding for `binding.habitID`, replacing any other.
+    ///
+    /// A binding is configuration on this device, not a log, so replacing it is correct. It
+    /// never syncs, which also means there is no peer whose duplicate could arrive later, but
+    /// duplicates are still collapsed in case an earlier build left one.
+    public func upsert(_ binding: HealthBinding) throws {
+        let id = binding.habitID
+        let existing = try modelContext.fetch(
+            FetchDescriptor<StoredHealthBinding>(predicate: #Predicate { $0.habitID == id })
+        )
+        if let row = existing.first {
+            row.update(from: binding)
+            for extra in existing.dropFirst() { modelContext.delete(extra) }
+        } else {
+            modelContext.insert(StoredHealthBinding(binding))
+        }
+        try commit()
+    }
+
+    /// Unlinks a habit from Health. Its completions, including any Health proposed, stay.
+    public func removeHealthBinding(for habitID: UUID) throws {
+        let rows = try modelContext.fetch(
+            FetchDescriptor<StoredHealthBinding>(predicate: #Predicate { $0.habitID == habitID })
+        )
+        for row in rows { modelContext.delete(row) }
+        try commit()
+    }
+
+    public func loadHealthBindings() throws -> LoadResult<HealthBinding> {
+        let rows = try modelContext.fetch(FetchDescriptor<StoredHealthBinding>())
+        var values: [HealthBinding] = []
+        var skipped: [StoreMappingError] = []
+        for row in rows {
+            do { values.append(try row.toDomain()) }
+            catch let error as StoreMappingError { skipped.append(error) }
+        }
+        // One binding per habit, chosen the same way on every launch. The app keys bindings by
+        // habit, and a second row for the same habit trapped that dictionary on every launch.
+        // The furthest-reconciled row wins, so a duplicate can never send the backfill back
+        // over days already covered; the rest of the order only has to be total.
+        let unique = Dictionary(grouping: values, by: \.habitID).values.compactMap { group in
+            group.max { lhs, rhs in
+                if lhs.lastReconciledDay != rhs.lastReconciledDay {
+                    return lhs.lastReconciledDay < rhs.lastReconciledDay
+                }
+                if lhs.signal != rhs.signal { return lhs.signal.rawValue < rhs.signal.rawValue }
+                return (lhs.externalIdentifier ?? "") < (rhs.externalIdentifier ?? "")
+            }
+        }
+        return LoadResult(
+            values: unique.sorted { $0.habitID.uuidString < $1.habitID.uuidString },
+            skipped: skipped
+        )
+    }
+
+    /// Records that the backfill has covered `binding` through `day`.
+    ///
+    /// Updates only a row that still describes the same signal, and never inserts one. The
+    /// backfill queries Health between reading the binding and writing this, and a plain
+    /// upsert of the copy it read would bring back a binding the person had just removed, or
+    /// overwrite the new one if they had relinked the habit to something else meanwhile.
+    ///
+    /// Also never moves backwards, so two overlapping backfills cannot undo each other.
+    ///
+    /// - Returns: whether a row was advanced.
+    @discardableResult
+    public func advanceReconciliation(of binding: HealthBinding, through day: DayKey) throws -> Bool {
+        let id = binding.habitID
+        let signal = binding.signal.rawValue
+        let rows = try modelContext.fetch(
+            FetchDescriptor<StoredHealthBinding>(predicate: #Predicate { $0.habitID == id })
+        )
+        var advanced = false
+        for row in rows
+        where row.signalRaw == signal
+            && row.externalIdentifier == binding.externalIdentifier
+            && row.lastReconciledDayRaw < day.rawValue {
+            row.lastReconciledDayRaw = day.rawValue
+            advanced = true
+        }
+        guard advanced else { return false }
+        try commit()
+        return true
+    }
+
     // MARK: - The fold
 
     /// Every habit's logs folded into the shape scoring and the lock-in gate read from.

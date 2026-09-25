@@ -41,6 +41,27 @@ public enum StoreMappingError: Error, Hashable, CustomStringConvertible {
     /// hide it while leaving the duplicate in place.
     case identifierMismatch(record: String, stored: String, derived: String)
 
+    /// The record this error is about, as written in the message.
+    public var record: String {
+        switch self {
+        case .invalidDayKey(let record, _, _), .unknownRawValue(let record, _, _),
+             .malformedScheduleMask(let record, _), .recordIsNewerThanThisBuild(let record, _, _),
+             .identifierMismatch(let record, _, _):
+            return record
+        }
+    }
+
+    /// Whether leaving this record out could open the lock-in gate.
+    ///
+    /// A habit that cannot be read drops out of the fold, and if it was the newest in its
+    /// routine the gate judges an older one that has already bedded in. A lifecycle event that
+    /// cannot be read can do the same, by leaving the newest habit looking paused. Unreadable
+    /// completions only ever make a habit look worse, which keeps the gate shut, so they do
+    /// not count here.
+    public var couldOpenGate: Bool {
+        record.hasPrefix("StoredHabit(") || record.hasPrefix("StoredLifecycleEvent(")
+    }
+
     public var description: String {
         switch self {
         case .invalidDayKey(let record, let field, let raw):

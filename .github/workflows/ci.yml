@@ -36,3 +36,45 @@ jobs:
 
       - name: Test
         run: swift test
+
+  app:
+    name: iOS app
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: App
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Pick a simulator
+        # Named devices change with every runner image, so take the first available iPhone
+        # on the newest iOS runtime rather than hardcoding one.
+        run: |
+          id=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          runtimes = sorted((r for r in devices if "iOS" in r), key=lambda r: [int(x) for x in r.rsplit("iOS-", 1)[1].split("-")])
+          for runtime in reversed(runtimes):
+              phones = [d for d in devices[runtime] if d["name"].startswith("iPhone")]
+              if phones:
+                  print(phones[0]["udid"]); break
+          ')
+          echo "Using $id"
+          echo "SIMULATOR_ID=$id" >> "$GITHUB_ENV"
+
+      - name: Build and run UI tests
+        # Unsigned, so the build carries no entitlements. The UI tests launch against the
+        # in-memory store and never reach CloudKit or HealthKit.
+        run: |
+          xcodebuild test \
+            -project HabitPlanner.xcodeproj \
+            -scheme HabitPlanner \
+            -destination "id=$SIMULATOR_ID" \
+            CODE_SIGNING_ALLOWED=NO
+
