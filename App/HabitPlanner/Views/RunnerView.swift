@@ -66,6 +66,7 @@ struct RunnerView: View {
         }
         .sensoryFeedback(.success, trigger: runner?.passed.count ?? 0) { old, new in new > old }
         .task { await plan() }
+        .onChange(of: model.histories) { followOutsideTicks() }
     }
 
     // MARK: - Transitions
@@ -86,6 +87,21 @@ struct RunnerView: View {
         runner = planned
         total = planned.remaining.count
         persist(nil)
+    }
+
+    /// Moves on when the habit on screen is ticked somewhere else.
+    ///
+    /// Siri, the widget's Done button, or the list on another device can each tick the habit
+    /// this runner is showing. The store is right and the runner is stale, so it is planned again
+    /// from the store, which resumes past the ticked step. Steps passed earlier in this session
+    /// can no longer be undone from here, only from the list. Queued writes made from the stale
+    /// runner are dropped.
+    private func followOutsideTicks() {
+        guard let current = runner?.currentHabitID,
+              model.history(for: current)?.isCompletedToday == true else { return }
+        generation += 1
+        runner = RoutineRunner(routine: routine, histories: model.histories,
+                               resuming: model.runsToday[routine], at: .now, in: model.timeZone)
     }
 
     private func complete(occurredAt: Date?) {

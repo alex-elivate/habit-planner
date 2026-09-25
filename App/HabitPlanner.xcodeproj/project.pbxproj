@@ -112,6 +112,8 @@
 		A10000000000000000005004 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
 		A10000000000000000005005 /* HabitPlannerWatchUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = HabitPlannerWatchUITests; sourceTree = "<group>"; };
 		A10000000000000000005006 /* WidgetShared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = WidgetShared; sourceTree = "<group>"; };
+		A10000000000000000005007 /* Intents */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Intents; sourceTree = "<group>"; };
+		A10000000000000000005008 /* Shortcuts */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shortcuts; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -177,6 +179,8 @@
 				A10000000000000000005005 /* HabitPlannerWatchUITests */,
 				A10000000000000000005004 /* Shared */,
 				A10000000000000000005006 /* WidgetShared */,
+				A10000000000000000005007 /* Intents */,
+				A10000000000000000005008 /* Shortcuts */,
 				A10000000000000000006003 /* Config */,
 				A10000000000000000006002 /* Products */,
 			);
@@ -226,6 +230,8 @@
 			fileSystemSynchronizedGroups = (
 				A10000000000000000005001 /* HabitPlanner */,
 				A10000000000000000005004 /* Shared */,
+				A10000000000000000005007 /* Intents */,
+				A10000000000000000005008 /* Shortcuts */,
 			);
 			name = HabitPlanner;
 			packageProductDependencies = (
@@ -274,6 +280,8 @@
 			fileSystemSynchronizedGroups = (
 				A10000000000000000005003 /* HabitPlannerWatch */,
 				A10000000000000000005004 /* Shared */,
+				A10000000000000000005007 /* Intents */,
+				A10000000000000000005008 /* Shortcuts */,
 			);
 			name = HabitPlannerWatch;
 			packageProductDependencies = (
@@ -320,6 +328,7 @@
 			fileSystemSynchronizedGroups = (
 				A10000000000000000005006 /* WidgetShared */,
 				A10000000000000000005004 /* Shared */,
+				A10000000000000000005007 /* Intents */,
 			);
 			name = HabitPlannerWidgets;
 			packageProductDependencies = (

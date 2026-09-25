@@ -1,3 +1,4 @@
+import AppIntents
 import HabitKit
 import HabitStore
 import Observation
@@ -52,6 +53,9 @@ final class Launch {
             let container = try mode.makeContainer()
             let model = AppModel(store: HabitStoreActor(modelContainer: container), mode: mode)
             state = .ready(model)
+            AppDependencyManager.shared.add(dependency: RoutineActions(model: model) { routine in
+                Router.shared.requestedRoutine = routine
+            })
             if mode.bridges {
                 let bridge = PhoneBridge(model: model)
                 bridge.start()
@@ -71,6 +75,9 @@ final class Launch {
             #endif
         } catch {
             state = .failed(String(describing: error))
+            // Registered anyway. An intent reaching for a dependency nobody added would stop
+            // the process, where this lets Siri say the habits could not be opened.
+            AppDependencyManager.shared.add(dependency: RoutineActions.unavailable)
         }
     }
 }
@@ -78,12 +85,15 @@ final class Launch {
 /// Carries a tapped reminder to the interface.
 @Observable
 final class Router {
+    /// One per process. Siri's Start Routine reaches it from outside the view tree.
+    static let shared = Router()
+
     /// The routine a reminder asked to start. The root view presents it and clears this.
     var requestedRoutine: RoutineSlot?
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    let router = Router()
+    let router = Router.shared
 
     func application(
         _ application: UIApplication,

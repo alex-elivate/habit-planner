@@ -11,6 +11,9 @@ import XCTest
 ///
 /// Screenshots of each stage are kept in the result bundle, since what a widget looks like is
 /// the point and no assertion can say it.
+///
+/// Expects a fresh install: it ticks the day's habit, so a second run the same day finds it
+/// done. Uninstall the app from the simulator first.
 final class WidgetCheck: XCTestCase {
     private var app: XCUIApplication!
     private var springboard: XCUIApplication!
@@ -76,6 +79,25 @@ final class WidgetCheck: XCTestCase {
         XCTAssertTrue(onScreen.waitForExistence(timeout: 10), "The widget tap did not open the runner")
         XCTAssertEqual(onScreen.label, "Drink water")
         keep("runner", app.screenshot())
+
+        // The Done button ticks the habit without opening anything. It runs in the app's
+        // process, so the tick has to show up in the widget and in the app's own list.
+        app.terminate()
+        // SpringBoard exposes the widget's text to XCUITest but not its button, so the button
+        // is tapped by where the medium layout puts it: left column, under the habit's name.
+        let placed = springboard.otherElements["Habit Planner"].firstMatch
+        // Home can land on the first page, and the widget may be on another.
+        for _ in 0..<3 where !placed.waitForExistence(timeout: 3) { springboard.swipeLeft() }
+        XCTAssertTrue(placed.exists, "The widget is on no home screen page")
+        placed.coordinate(withNormalizedOffset: CGVector(dx: 0.16, dy: 0.65)).tap()
+        XCTAssertTrue(springboard.staticTexts["Done for today"].waitForExistence(timeout: 15),
+                      "The widget never showed the tick")
+        keep("after done", springboard.screenshot())
+
+        app.launch()
+        let row = app.buttons["Mark not done"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "The app's list does not show the tick")
+        keep("app after done", app.screenshot())
     }
 
     /// Long press, Edit, Add Widget, find ours, add the medium size.

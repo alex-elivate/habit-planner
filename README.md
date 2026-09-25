@@ -10,8 +10,8 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phases 3 to 5 are built and tested on simulators: the iOS app, the watchOS app and its bridge,
-and the widgets and complications, with 229 package tests. None of them has run on a physical
+Phases 3 to 6 are built and tested on simulators: the iOS app, the watchOS app and its bridge,
+the widgets and complications, and Siri and Shortcuts, with 236 package tests. None of them has run on a physical
 device yet, and the CloudKit schema has not been primed or promoted. See
 [Before the first TestFlight build](#before-the-first-testflight-build).
 
@@ -367,9 +367,9 @@ has been missed.
 
 ### Tapping opens the runner
 
-Widgets are read only in this phase. A tap opens the app on the runner for the routine shown,
-through a `habitplanner://run/<routine>` link that carries nothing else. Ticking a habit from
-the widget itself needs App Intents, which is Phase 6.
+A tap opens the app on the runner for the routine shown, through a `habitplanner://run/<routine>`
+link that carries nothing else. The home screen sizes also have a Done button, which ticks the
+current habit without opening anything. See [Siri and Shortcuts](#siri-and-shortcuts).
 
 ### The planned habit
 
@@ -387,6 +387,58 @@ The complication runs in its own process and can only reach the watch's store th
 watch's App Group container. The same group identifier names a separate container on each
 device, so nothing crosses between phone and watch this way. No Phase 4 build ever ran on a
 real watch, so there was no old store to move.
+
+## Siri and Shortcuts
+
+Three intents, on iPhone and watch, each with phrases Siri knows without setup:
+
+| Intent | Says | Does |
+|---|---|---|
+| Start Routine | "Start my morning routine in Habit Planner" | Opens the runner on that routine |
+| Mark Current Habit Done | "Mark my habit done in Habit Planner" | Ticks the habit next in sequence and says what follows |
+| What's Next | "What's next in Habit Planner" | Says the next habit and how many are left |
+
+Leave the routine out and What's Next answers for the routine the widgets feature. Mark Current
+Habit Done uses the routine for the time of day instead, with no handover. Once the morning is
+finished, the widget moves on to the evening, which is right for something that only shows. An
+unqualified "mark my habit done" at 7:30 must not tick tonight's habit.
+
+Start Routine hands the routine to the app's router, the same path a tapped reminder takes. It
+does not open the widget's link, because only the iPhone app registers that URL scheme and a
+watch app cannot register one.
+
+A runner left open on screen follows a tick made elsewhere. When Siri or the widget ticks the
+habit it is showing, it plans again from the store and moves on.
+
+### Only the current habit, never one by name
+
+No intent takes a habit as a parameter. Every one acts on the habit the runner would offer next,
+planned by the same `RoutineRunner` from the same fold, resuming today's run. A step skipped in
+the runner stays skipped. The sequence is the product, so Shortcuts gets no way around it.
+
+### The widget's button runs in the app
+
+By default, a widget button's intent runs in the widget extension, and that extension only ever
+reads the store. Apple documents that an intent conforming to `LiveActivityIntent` runs in the
+app's process instead. `CompleteCurrentHabitIntent` conforms for that routing alone, since
+there is no Live Activity. So a tick from the widget goes through the app's own store, which is
+the only one that syncs, and no extension ever opens a writable copy. The protocol does not
+exist on watchOS, and a complication has no buttons that would need it.
+
+### Intents write the way the runner does
+
+Each app registers a `RoutineActions` dependency at launch, over its own model. On the phone a
+tick goes through the syncing store and the usual reload, so the list, the widgets and the watch
+snapshot all follow. On the watch it goes through the same hooks as a runner tap, so the bridge
+widens its next report before the write and sends it after. When the store failed to open, a
+stand-in is registered instead, so Siri says so rather than the process stopping on a missing
+dependency.
+
+### Routine is its own enum here
+
+The App Intents metadata processor reads an enum's cases from the module it is compiling, and
+rejects one declared in another module at build time. `RoutineSlot` lives in HabitKit, so the
+intents take a `RoutineChoice` that maps onto it one to one.
 
 ## Getting started
 
@@ -454,6 +506,9 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
    so both sides report a transfer delivered and the receiving app never hears of it. The
    bridge logs to the `org.trusler.habitplanner` subsystem, category `bridge`, on both
    devices.
+9. **Try Siri on both devices.** Say each phrase in the Siri and Shortcuts table on the phone
+   and on the watch, and check the tick from the watch reaches the phone. The simulators ran
+   the widget's Done button but not Siri.
 
 ## Roadmap
 
@@ -461,10 +516,10 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 |---|---|---|
 | 1 | HabitKit domain package | Done |
 | 2 | SwiftData persistence and CloudKit schema | Done |
-| 3 | iOS app and routine runner | Built, awaiting device checks |
-| 4 | watchOS app and sync bridge | Built, awaiting device checks |
-| 5 | Widgets and watch complication | Built, awaiting device checks |
-| 6 | App Intents, Siri, Shortcuts | |
+| 3 | iOS app and routine runner | Merged, awaiting device checks |
+| 4 | watchOS app and sync bridge | Merged, awaiting device checks |
+| 5 | Widgets and watch complication | Merged, awaiting device checks |
+| 6 | App Intents, Siri, Shortcuts | Built, awaiting device checks |
 | 7 | macOS app and reporting | |
 | 8 | Lock-in ceremony and charts | |
 

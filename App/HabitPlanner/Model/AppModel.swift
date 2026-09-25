@@ -11,7 +11,7 @@ import WidgetKit
 /// first and the model reloads afterwards, so what is on screen is always what a fold of the
 /// logs says, never an optimistic copy that could drift from it.
 @Observable
-final class AppModel {
+final class AppModel: RoutineActing {
     let store: HabitStoreActor
     let mode: StoreMode
 
@@ -234,6 +234,24 @@ final class AppModel {
            plan.title.localizedCaseInsensitiveCompare(habit.title) == .orderedSame {
             await clearPlan(for: draft.routine)
         }
+    }
+
+    // MARK: - Intents
+
+    /// Marks done the habit next in `routine`, for Siri, Shortcuts and the widget's button.
+    ///
+    /// Throws rather than setting `failure`, so Siri can say what went wrong instead of an
+    /// alert waiting in an app nobody opened.
+    func completeCurrentStep(in routine: RoutineSlot) async throws -> StepOutcome {
+        let outcome = try await store.completeCurrentStep(in: routine, at: .now, timeZone: timeZone)
+        // The same reload every write ends with, so the list, the widgets and the watch
+        // snapshot all follow.
+        await reload()
+        return outcome
+    }
+
+    func glanceNow() async throws -> Glance {
+        try await store.glance(at: .now, in: timeZone)
     }
 
     // MARK: - Planned habits

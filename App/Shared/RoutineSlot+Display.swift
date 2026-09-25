@@ -4,7 +4,7 @@ extension RoutineSlot: @retroactive Identifiable {
     public var id: String { rawValue }
 }
 
-extension RoutineSlot {
+nonisolated extension RoutineSlot {
     var title: String {
         switch self {
         case .morning: "Morning"

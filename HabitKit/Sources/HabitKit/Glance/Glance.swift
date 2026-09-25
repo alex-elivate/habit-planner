@@ -62,6 +62,17 @@ public struct Glance: Hashable, Sendable {
         self.routines = routines
     }
 
+    /// Morning before `eveningBeginsAtHour`, evening from it, with no handover of any kind.
+    ///
+    /// What an unqualified request to act means. Showing the evening once the morning is done
+    /// is right for a widget, which only shows. Ticking an evening habit at 7:30 because
+    /// somebody said "mark my habit done" is not, so acting intents use this instead.
+    public static func routine(forTimeOf instant: Date, in timeZone: TimeZone) -> RoutineSlot {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar.component(.hour, from: instant) < eveningBeginsAtHour ? .morning : .evening
+    }
+
     public func routine(_ slot: RoutineSlot) -> RoutineGlance {
         routines.first { $0.routine == slot }!
     }
@@ -80,10 +91,7 @@ public struct Glance: Hashable, Sendable {
     /// own. By then it has been missed, and featuring it would push the routine that can still
     /// be done out of view.
     public func featured(at instant: Date, in timeZone: TimeZone) -> RoutineSlot {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-        let preferred: RoutineSlot = calendar.component(.hour, from: instant) < Self.eveningBeginsAtHour
-            ? .morning : .evening
+        let preferred = Self.routine(forTimeOf: instant, in: timeZone)
         let other: RoutineSlot = preferred == .morning ? .evening : .morning
         if !routine(preferred).hasWorkToday, routine(other).hasWorkToday { return other }
         if preferred == .morning, routine(.morning).remaining == 0, routine(.evening).remaining > 0 {
