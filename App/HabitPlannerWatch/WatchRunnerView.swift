@@ -16,6 +16,10 @@ struct WatchRunnerView: View {
     /// Bumped when a write fails, so writes queued after it are dropped with the state they
     /// were made from.
     @State private var generation = 0
+    /// Habits this runner recorded itself. Its own writes land after it has moved on, and after
+    /// Back it can be showing a habit whose completion is still on its way to the store. That
+    /// arrival is not a tick from elsewhere and must not be followed.
+    @State private var recordedHere: Set<UUID> = []
 
     var body: some View {
         NavigationStack {
@@ -71,7 +75,7 @@ struct WatchRunnerView: View {
     /// can no longer be undone from here, only from the list. Queued writes made from the stale
     /// runner are dropped.
     private func followOutsideTicks() {
-        guard let current = runner?.currentHabitID,
+        guard let current = runner?.currentHabitID, !recordedHere.contains(current),
               model.history(for: current)?.isCompletedToday == true else { return }
         generation += 1
         runner = RoutineRunner(routine: routine, histories: model.histories,
@@ -80,6 +84,7 @@ struct WatchRunnerView: View {
 
     private func complete() {
         let before = runner
+        if let current = runner?.currentHabitID { recordedHere.insert(current) }
         let event = runner?.complete(at: .now)
         persist(event, rollingBackTo: before)
     }
