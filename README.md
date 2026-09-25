@@ -10,8 +10,9 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phases 3 to 6 are built and tested on simulators: the iOS app, the watchOS app and its bridge,
-the widgets and complications, and Siri and Shortcuts, with 236 package tests. None of them has run on a physical
+Phases 3 to 7 are built: the iOS app, the watchOS app and its bridge, the widgets and
+complications, Siri and Shortcuts, and the Mac app, with 245 package tests. The iPhone and watch
+apps are tested on simulators. The Mac app has been run in its demo mode only. None of them has run on a physical
 device yet, and the CloudKit schema has not been primed or promoted. See
 [Before the first TestFlight build](#before-the-first-testflight-build).
 
@@ -32,7 +33,9 @@ HabitAI           macOS only. On-device model access behind a protocol.
 domain testable with no container and preserves the exit path if SwiftData and CloudKit turn
 out not to work together for this app.
 
-Target topology is one multiplatform app target for iPhone, iPad, and Mac, plus a separate watchOS target. watchOS cannot join a multiplatform target, so that split is a constraint rather than a preference.
+Target topology is three app targets: iPhone, watch and Mac. The plan was one multiplatform target for iPhone and Mac. Phase 7 chose a separate Mac target instead, so the iPhone code needs no `#if` around UIKit, HealthKit, the watch bridge and notifications, and the Mac gets a sidebar layout rather than iPhone screens. watchOS cannot join a multiplatform target in any case.
+
+The apps share code by folder rather than by target: `AppCore` (the model), `SharedViews` (the editor and routine list), `Shared`, `Intents` and `WidgetShared`. The one view modifier that differs, the inline title, is defined once in each app.
 
 ### Where data lives
 
@@ -440,6 +443,30 @@ The App Intents metadata processor reads an enum's cases from the module it is c
 rejects one declared in another module at build time. `RoutineSlot` lives in HabitKit, so the
 intents take a `RoutineChoice` that maps onto it one to one.
 
+## The Mac app
+
+A review-and-edit surface and a CloudKit peer. It runs routines, edits habits under the same
+lock-in gate, and adds three reports:
+
+- **A habit's calendar.** A month grid with each day done, missed, a rest day, paused, or today
+  and not yet done, and weekly and monthly rates beside it.
+- **Completion rates.** Every habit's last four weeks and three months, and its streak. Rates
+  under the gate's 85 percent show in orange.
+- **Lock-in.** For each routine, the habit being judged, its sessions and rate, and what the
+  routine plans to add next.
+
+`HabitReport` in HabitKit computes all of it from `HabitHistory` and nothing else. A day counts
+in a rate exactly when it is one of the settled occurrences the gate judges, and a test holds
+the calendar's done and missed days equal to those occurrences. So a report cannot disagree
+with the streak, the score or the gate.
+
+There is no Health on the Mac, since macOS has no Health data, and no reminders, since the
+phone's already reach the person. CloudKit.framework is linked explicitly. A Mac target that
+leaves it out syncs in Debug and silently not in Release.
+
+The Mac widgets are the same Routine widget in the system sizes. They have no Done button,
+because the protocol that runs a widget's intent in the app is iPhone only.
+
 ## Getting started
 
 ```bash
@@ -467,6 +494,11 @@ xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlannerWatch -desti
 to the watch, for when an unsigned build cannot open the syncing one. It is only useful on
 devices, for the reason in step 8 below. Widgets never see it, since it sits outside the App
 Group.
+
+The Mac app runs with the same demo arguments. `-SnapshotPages` (debug only) adds a pass that
+steps through each page and saves a picture of it in the app's temporary folder, for checking
+the layout without automation permissions. The Mac UI tests in `HabitPlannerMacUITests` need
+someone at the machine to approve automation mode the first time.
 
 `WidgetCheck` puts the widget on a simulator's home screen, checks what it shows and that a tap
 opens the runner, and keeps screenshots in the result bundle. It runs the real syncing build and
@@ -506,7 +538,11 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
    so both sides report a transfer delivered and the receiving app never hears of it. The
    bridge logs to the `org.trusler.habitplanner` subsystem, category `bridge`, on both
    devices.
-9. **Try Siri on both devices.** Say each phrase in the Siri and Shortcuts table on the phone
+9. **Mac signing.** The first signed Mac build needs a Mac development profile. Xcode creates one
+   when signing is turned on, registering this Mac as a device. The Mac uses the same App ID
+   as the phone. `org.trusler.habitplanner.widgets` needs the App Group on the Mac as well.
+   Then verify sync between the phone and the Mac from a Release archive.
+10. **Try Siri on both devices.** Say each phrase in the Siri and Shortcuts table on the phone
    and on the watch, and check the tick from the watch reaches the phone. The simulators ran
    the widget's Done button but not Siri.
 
@@ -519,8 +555,8 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 | 3 | iOS app and routine runner | Merged, awaiting device checks |
 | 4 | watchOS app and sync bridge | Merged, awaiting device checks |
 | 5 | Widgets and watch complication | Merged, awaiting device checks |
-| 6 | App Intents, Siri, Shortcuts | Built, awaiting device checks |
-| 7 | macOS app and reporting | |
+| 6 | App Intents, Siri, Shortcuts | Merged, awaiting device checks |
+| 7 | macOS app and reporting | Built, awaiting device checks |
 | 8 | Lock-in ceremony and charts | |
 
 Deferred past v1: Foundation Models summaries (Mac only), Live Activities (iPhone-initiated only, since ActivityKit has no watchOS platform), and HealthKit auto-completion.

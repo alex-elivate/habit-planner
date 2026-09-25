@@ -18,6 +18,12 @@
 		A1000000000000000000B009 /* HabitStore in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D006 /* HabitStore */; };
 		A1000000000000000000B00A /* HabitKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D007 /* HabitKit */; };
 		A1000000000000000000B00B /* HabitStore in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D008 /* HabitStore */; };
+		A1000000000000000000B00C /* HabitKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D009 /* HabitKit */; };
+		A1000000000000000000B00D /* HabitStore in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D00A /* HabitStore */; };
+		A1000000000000000000B00E /* HabitKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D00B /* HabitKit */; };
+		A1000000000000000000B00F /* HabitStore in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D00C /* HabitStore */; };
+		A1000000000000000000B010 /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000F0B /* CloudKit.framework */; };
+		A1000000000000000000B011 /* HabitPlannerMacWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000F0A /* HabitPlannerMacWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,6 +62,20 @@
 			remoteGlobalIDString = A10000000000000000007006;
 			remoteInfo = HabitPlannerWatchWidgets;
 		};
+		A10000000000000000003006 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000008001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000007008;
+			remoteInfo = HabitPlannerMacWidgets;
+		};
+		A10000000000000000003007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000008001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000007007;
+			remoteInfo = HabitPlannerMac;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -92,6 +112,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000009022 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000000000000000000B011 /* HabitPlannerMacWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -103,6 +134,10 @@
 		A10000000000000000000F06 /* HabitPlannerWatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HabitPlannerWatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000F07 /* HabitPlannerWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HabitPlannerWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000F08 /* HabitPlannerWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HabitPlannerWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000F09 /* HabitPlannerMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HabitPlannerMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000F0A /* HabitPlannerMacWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HabitPlannerMacWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000F0B /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
+		A10000000000000000000F0C /* HabitPlannerMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HabitPlannerMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -114,6 +149,10 @@
 		A10000000000000000005006 /* WidgetShared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = WidgetShared; sourceTree = "<group>"; };
 		A10000000000000000005007 /* Intents */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Intents; sourceTree = "<group>"; };
 		A10000000000000000005008 /* Shortcuts */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shortcuts; sourceTree = "<group>"; };
+		A10000000000000000005009 /* AppCore */ = {isa = PBXFileSystemSynchronizedRootGroup; path = AppCore; sourceTree = "<group>"; };
+		A1000000000000000000500A /* SharedViews */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SharedViews; sourceTree = "<group>"; };
+		A1000000000000000000500B /* HabitPlannerMac */ = {isa = PBXFileSystemSynchronizedRootGroup; path = HabitPlannerMac; sourceTree = "<group>"; };
+		A1000000000000000000500C /* HabitPlannerMacUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = HabitPlannerMacUITests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -167,6 +206,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000009024 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000B00C /* HabitKit in Frameworks */,
+				A1000000000000000000B00D /* HabitStore in Frameworks */,
+				A1000000000000000000B010 /* CloudKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000009027 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000B00E /* HabitKit in Frameworks */,
+				A1000000000000000000B00F /* HabitStore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000000000000000000902A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -181,6 +246,10 @@
 				A10000000000000000005006 /* WidgetShared */,
 				A10000000000000000005007 /* Intents */,
 				A10000000000000000005008 /* Shortcuts */,
+				A10000000000000000005009 /* AppCore */,
+				A1000000000000000000500A /* SharedViews */,
+				A1000000000000000000500B /* HabitPlannerMac */,
+				A1000000000000000000500C /* HabitPlannerMacUITests */,
 				A10000000000000000006003 /* Config */,
 				A10000000000000000006002 /* Products */,
 			);
@@ -195,6 +264,9 @@
 				A10000000000000000000F06 /* HabitPlannerWatchUITests.xctest */,
 				A10000000000000000000F07 /* HabitPlannerWidgets.appex */,
 				A10000000000000000000F08 /* HabitPlannerWatchWidgets.appex */,
+				A10000000000000000000F09 /* HabitPlannerMac.app */,
+				A10000000000000000000F0A /* HabitPlannerMacWidgets.appex */,
+				A10000000000000000000F0C /* HabitPlannerMacUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -232,6 +304,8 @@
 				A10000000000000000005004 /* Shared */,
 				A10000000000000000005007 /* Intents */,
 				A10000000000000000005008 /* Shortcuts */,
+				A10000000000000000005009 /* AppCore */,
+				A1000000000000000000500A /* SharedViews */,
 			);
 			name = HabitPlanner;
 			packageProductDependencies = (
@@ -364,6 +438,84 @@
 			productReference = A10000000000000000000F08 /* HabitPlannerWatchWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A10000000000000000007007 /* HabitPlannerMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000001008 /* Build configuration list for PBXNativeTarget "HabitPlannerMac" */;
+			buildPhases = (
+				A10000000000000000009023 /* Sources */,
+				A10000000000000000009024 /* Frameworks */,
+				A10000000000000000009025 /* Resources */,
+				A10000000000000000009022 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000004006 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1000000000000000000500B /* HabitPlannerMac */,
+				A10000000000000000005004 /* Shared */,
+				A10000000000000000005007 /* Intents */,
+				A10000000000000000005008 /* Shortcuts */,
+				A10000000000000000005009 /* AppCore */,
+				A1000000000000000000500A /* SharedViews */,
+			);
+			name = HabitPlannerMac;
+			packageProductDependencies = (
+				A1000000000000000000D009 /* HabitKit */,
+				A1000000000000000000D00A /* HabitStore */,
+			);
+			productName = HabitPlannerMac;
+			productReference = A10000000000000000000F09 /* HabitPlannerMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000007008 /* HabitPlannerMacWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000001009 /* Build configuration list for PBXNativeTarget "HabitPlannerMacWidgets" */;
+			buildPhases = (
+				A10000000000000000009026 /* Sources */,
+				A10000000000000000009027 /* Frameworks */,
+				A10000000000000000009028 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000005006 /* WidgetShared */,
+				A10000000000000000005004 /* Shared */,
+				A10000000000000000005007 /* Intents */,
+			);
+			name = HabitPlannerMacWidgets;
+			packageProductDependencies = (
+				A1000000000000000000D00B /* HabitKit */,
+				A1000000000000000000D00C /* HabitStore */,
+			);
+			productName = HabitPlannerMacWidgets;
+			productReference = A10000000000000000000F0A /* HabitPlannerMacWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A10000000000000000007009 /* HabitPlannerMacUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000000000000000000100A /* Build configuration list for PBXNativeTarget "HabitPlannerMacUITests" */;
+			buildPhases = (
+				A10000000000000000009029 /* Sources */,
+				A1000000000000000000902A /* Frameworks */,
+				A1000000000000000000902B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000004007 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1000000000000000000500C /* HabitPlannerMacUITests */,
+			);
+			name = HabitPlannerMacUITests;
+			productName = HabitPlannerMacUITests;
+			productReference = A10000000000000000000F0C /* HabitPlannerMacUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -394,6 +546,16 @@
 					A10000000000000000007006 = {
 						CreatedOnToolsVersion = 26.5;
 					};
+					A10000000000000000007007 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					A10000000000000000007008 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					A10000000000000000007009 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = A10000000000000000007007;
+					};
 				};
 			};
 			buildConfigurationList = A10000000000000000001001 /* Build configuration list for PBXProject "HabitPlanner" */;
@@ -419,6 +581,9 @@
 				A10000000000000000007004 /* HabitPlannerWatchUITests */,
 				A10000000000000000007005 /* HabitPlannerWidgets */,
 				A10000000000000000007006 /* HabitPlannerWatchWidgets */,
+				A10000000000000000007007 /* HabitPlannerMac */,
+				A10000000000000000007008 /* HabitPlannerMacWidgets */,
+				A10000000000000000007009 /* HabitPlannerMacUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -460,6 +625,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000009019 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000009025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000009028 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000000000000000000902B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -511,6 +697,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000009023 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000009026 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000009029 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -538,6 +745,16 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000007006 /* HabitPlannerWatchWidgets */;
 			targetProxy = A10000000000000000003005 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000004006 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000007008 /* HabitPlannerMacWidgets */;
+			targetProxy = A10000000000000000003006 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000004007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000007007 /* HabitPlannerMac */;
+			targetProxy = A10000000000000000003007 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -887,6 +1104,162 @@
 			};
 			name = Release;
 		};
+		A1000000000000000000C00F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/HabitPlannerMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/MacInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Habit Planner";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = org.trusler.habitplanner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A1000000000000000000C010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/HabitPlannerMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/MacInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Habit Planner";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = org.trusler.habitplanner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A1000000000000000000C011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/HabitPlannerMacWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/WidgetsInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Habit Planner";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = org.trusler.habitplanner.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A1000000000000000000C012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/HabitPlannerMacWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/WidgetsInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Habit Planner";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = org.trusler.habitplanner.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A1000000000000000000C013 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = org.trusler.habitplanner.macuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = HabitPlannerMac;
+			};
+			name = Debug;
+		};
+		A1000000000000000000C014 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.5;
+				PRODUCT_BUNDLE_IDENTIFIER = org.trusler.habitplanner.macuitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = HabitPlannerMac;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -953,6 +1326,33 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A10000000000000000001008 /* Build configuration list for PBXNativeTarget "HabitPlannerMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000C00F /* Debug */,
+				A1000000000000000000C010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000001009 /* Build configuration list for PBXNativeTarget "HabitPlannerMacWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000C011 /* Debug */,
+				A1000000000000000000C012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000000000000000000100A /* Build configuration list for PBXNativeTarget "HabitPlannerMacUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000C013 /* Debug */,
+				A1000000000000000000C014 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -992,6 +1392,22 @@
 			productName = HabitKit;
 		};
 		A1000000000000000000D008 /* HabitStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HabitStore;
+		};
+		A1000000000000000000D009 /* HabitKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HabitKit;
+		};
+		A1000000000000000000D00A /* HabitStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HabitStore;
+		};
+		A1000000000000000000D00B /* HabitKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HabitKit;
+		};
+		A1000000000000000000D00C /* HabitStore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HabitStore;
 		};

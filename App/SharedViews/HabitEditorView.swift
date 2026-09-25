@@ -51,7 +51,7 @@ struct HabitEditorView: View {
             }
         }
         .navigationTitle(isNew ? "New habit" : "Edit habit")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }

@@ -118,9 +118,7 @@ struct AddHabitRow: View {
                   systemImage: "exclamationmark.triangle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-        case .blocked(nil):
-            EmptyView()
-        case .blocked(let judged?):
+        case .blocked(let judged):
             if let habit = model.history(for: judged.habitID)?.habit {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Next habit unlocks when \(habit.title) beds in", systemImage: "lock")
@@ -195,7 +193,7 @@ struct PlanHabitView: View {
             }
         }
         .navigationTitle("Next habit")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
