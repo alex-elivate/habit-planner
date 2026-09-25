@@ -1,3 +1,4 @@
+import AppIntents
 import HabitKit
 import SwiftUI
 import WidgetKit
@@ -38,9 +39,11 @@ struct GlanceView: View {
         case .systemLarge:
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(glance.routines, id: \.routine) { routine in
-                    Link(destination: WidgetLink.url(for: routine.routine)) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            NextHabitView(routine: routine)
+                    // Each part links on its own, never around the Done button. A button nested
+                    // in a Link can lose its tap to the Link and open the app instead.
+                    VStack(alignment: .leading, spacing: 10) {
+                        NextHabitView(routine: routine, link: WidgetLink.url(for: routine.routine))
+                        Link(destination: WidgetLink.url(for: routine.routine)) {
                             UnlockView(routine: routine)
                         }
                     }
@@ -82,26 +85,44 @@ struct GlanceView: View {
 /// The routine's next habit and how far through today it is. The runner's first screen.
 private struct NextHabitView: View {
     let routine: RoutineGlance
+    /// Where the text leads, when the widget has more than one routine to link to. The Done
+    /// button always sits outside it.
+    var link: URL?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(routine.routine.title, systemImage: routine.routine.symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tint)
-
-            Spacer(minLength: 0)
-
-            if let next = routine.nextHabitTitle {
-                Text("Next").font(.caption2).foregroundStyle(.secondary)
-                Text(next)
-                    .font(.headline)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.8)
-            } else {
-                Text(routine.doneText).font(.headline)
+            linked {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(routine.routine.title, systemImage: routine.routine.symbol)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tint)
+                    if let next = routine.nextHabitTitle {
+                        Text("Next").font(.caption2).foregroundStyle(.secondary)
+                        Text(next)
+                            .font(.headline)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.8)
+                    } else {
+                        Text(routine.doneText).font(.headline)
+                    }
+                }
             }
 
             Spacer(minLength: 0)
+
+            if routine.nextHabitTitle != nil {
+                #if os(iOS)
+                // Runs in the app, which ticks the habit next in sequence and reloads this
+                // widget. See `CompleteCurrentHabitIntent`.
+                Button(intent: CompleteCurrentHabitIntent(routine: routine.routine)) {
+                    Label("Done", systemImage: "checkmark")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .accessibilityIdentifier("widget.done.\(routine.routine.rawValue)")
+                #endif
+            }
 
             HStack(spacing: 6) {
                 Gauge(value: routine.progress.fraction) { EmptyView() }
@@ -113,7 +134,14 @@ private struct NextHabitView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private func linked(@ViewBuilder _ content: () -> some View) -> some View {
+        if let link {
+            Link(destination: link, label: content)
+        } else {
+            content()
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+import AppIntents
 import HabitKit
 import HabitStore
 import Observation
@@ -78,6 +79,9 @@ final class WatchLaunch {
             let model = WatchModel(store: HabitStoreActor(modelContainer: container),
                                    complicationsReadThisStore: !inMemory)
             state = .ready(model)
+            AppDependencyManager.shared.add(dependency: RoutineActions(model: model) { routine in
+                WatchRouter.shared.requestedRoutine = routine
+            })
             if !inMemory {
                 let bridge = WatchBridge(model: model)
                 bridge.start()
@@ -93,6 +97,7 @@ final class WatchLaunch {
             #endif
         } catch {
             state = .failed(String(describing: error))
+            AppDependencyManager.shared.add(dependency: RoutineActions.unavailable)
         }
     }
 }
@@ -100,6 +105,9 @@ final class WatchLaunch {
 /// Carries a tapped reminder to the interface.
 @Observable
 final class WatchRouter {
+    /// One per process. Siri's Start Routine reaches it from outside the view tree.
+    static let shared = WatchRouter()
+
     var requestedRoutine: RoutineSlot?
 }
 
@@ -108,7 +116,7 @@ final class WatchRouter {
 /// The watch schedules none of its own. The phone's reminder already reaches the watch when
 /// the phone is locked, and a second one from the watch would arrive as a duplicate.
 final class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCenterDelegate {
-    let router = WatchRouter()
+    let router = WatchRouter.shared
 
     func applicationDidFinishLaunching() {
         UNUserNotificationCenter.current().delegate = self

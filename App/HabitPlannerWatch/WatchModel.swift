@@ -11,7 +11,7 @@ import WidgetKit
 /// score and streak here is folded from the replica with the same HabitKit code the phone
 /// uses, so the two agree whenever they hold the same records.
 @Observable
-final class WatchModel {
+final class WatchModel: RoutineActing {
     let store: HabitStoreActor
     /// Whether the complication reads this store. Not the in-memory store, which it cannot see.
     let complicationsReadThisStore: Bool
@@ -104,6 +104,25 @@ final class WatchModel {
 
     func save(_ run: RoutineRun) async {
         await write(on: run.dayKey) { try await store.upsert(run) }
+    }
+
+    // MARK: - Intents
+
+    /// Marks done the habit next in `routine`, for Siri on the wrist.
+    ///
+    /// Through the same hooks as a runner tap, so the bridge widens its next report before the
+    /// write and sends it after.
+    func completeCurrentStep(in routine: RoutineSlot) async throws -> StepOutcome {
+        let now = Date.now
+        beforeWrite?(DayKey(now, in: timeZone))
+        let outcome = try await store.completeCurrentStep(in: routine, at: now, timeZone: timeZone)
+        await reload()
+        if case .completed = outcome { afterWrite?() }
+        return outcome
+    }
+
+    func glanceNow() async throws -> Glance {
+        try await store.glance(at: .now, in: timeZone)
     }
 
     @discardableResult

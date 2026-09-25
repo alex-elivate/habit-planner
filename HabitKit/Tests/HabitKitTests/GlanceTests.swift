@@ -289,3 +289,19 @@ struct UnlockMatchesGateTests {
         #expect(plan.isCleared)
     }
 }
+
+@Suite("Time-of-day routine")
+struct TimeOfDayRoutineTests {
+    @Test("Never hands over, unlike the featured routine")
+    func noHandover() {
+        let utc = TimeZone(identifier: "UTC")!
+        let seven = Date(timeIntervalSince1970: TimeInterval(referenceToday.ordinal) * 86_400 + 7 * 3_600)
+        let morningDone = makeHistory("CCCC", completedToday: true)
+        let evening = makeHistory("CCCC", routine: .evening)
+        let glance = Glance(histories: [morningDone, evening], runs: [:], planned: [:],
+                            gateHasUnreadableInput: false, at: seven, in: utc)
+        #expect(glance.featured(at: seven, in: utc) == .evening)
+        #expect(Glance.routine(forTimeOf: seven, in: utc) == .morning)
+        #expect(Glance.routine(forTimeOf: seven.addingTimeInterval(5 * 3_600), in: utc) == .evening)
+    }
+}

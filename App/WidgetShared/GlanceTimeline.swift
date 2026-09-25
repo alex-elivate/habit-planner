@@ -88,32 +88,9 @@ enum GlanceTimeline {
             return [GlanceEntry(date: now, content: .unreadable, timeZone: timeZone)]
         }
         do {
-            let runs = try await store.loadRoutineRuns().values
-            let planned = try await store.loadPlannedHabits().values.resolved()
-
-            var folds: [DayKey: LoadResult<HabitHistory>] = [:]
-            var entries: [GlanceEntry] = []
-            for date in nowOnly ? [now] : moments(from: now, in: timeZone) {
-                let day = DayKey(date, in: timeZone)
-                let histories: LoadResult<HabitHistory>
-                if let fold = folds[day] {
-                    histories = fold
-                } else {
-                    histories = try await store.loadHistories(today: day)
-                    folds[day] = histories
-                }
-                let glance = Glance(
-                    histories: histories.values,
-                    runs: Dictionary(runs.filter { $0.dayKey == day }.map { ($0.routine, $0) },
-                                     uniquingKeysWith: { first, _ in first }),
-                    planned: planned,
-                    gateHasUnreadableInput: histories.skipped.contains(where: \.couldOpenGate),
-                    at: date,
-                    in: timeZone
-                )
-                entries.append(GlanceEntry(date: date, content: .glance(glance), timeZone: timeZone))
-            }
-            return entries
+            let dates = nowOnly ? [now] : moments(from: now, in: timeZone)
+            let glances = try await store.glances(at: dates, in: timeZone)
+            return zip(dates, glances).map { GlanceEntry(date: $0, content: .glance($1), timeZone: timeZone) }
         } catch {
             log.error("Could not read the store: \(String(describing: error), privacy: .public)")
             return [GlanceEntry(date: now, content: .unreadable, timeZone: timeZone)]
