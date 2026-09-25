@@ -43,6 +43,7 @@ public struct PrimingRecords {
     public let lifecycle: StoredLifecycleEvent
     public let run: StoredRoutineRun
     public let step: StoredRoutineStep
+    public let planned: StoredPlannedHabit
 }
 
 public enum CloudKitSchemaPriming {
@@ -97,7 +98,11 @@ public enum CloudKitSchemaPriming {
                 occurredAt: instant, timeZoneIdentifier: "UTC", payloadJSON: "{}"
             ),
             run: run,
-            step: step
+            step: step,
+            planned: StoredPlannedHabit(
+                routineRaw: RoutineSlot.morning.rawValue, title: "schema priming",
+                recordedAt: instant, payloadJSON: "{}"
+            )
         )
     }
 }
@@ -117,12 +122,13 @@ extension HabitStoreActor {
         modelContext.insert(records.lifecycle)
         modelContext.insert(records.run)
         modelContext.insert(records.step)
+        modelContext.insert(records.planned)
         // The relationship is a field on both sides, so it has to be exercised too.
         records.run.steps = [records.step]
         try modelContext.save()
 
         for object in [records.habit, records.completion, records.lifecycle,
-                       records.step, records.run] as [any PersistentModel] {
+                       records.step, records.run, records.planned] as [any PersistentModel] {
             modelContext.delete(object)
         }
         try modelContext.save()

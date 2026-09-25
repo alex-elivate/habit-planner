@@ -6,10 +6,15 @@ public enum StoreConfigurationError: Error, CustomStringConvertible {
     /// A syncing role was asked for without a CloudKit container identifier.
     case missingCloudKitContainerID
 
+    /// A widget was asked to open the store without the App Group it shares with the app.
+    case missingAppGroupID
+
     public var description: String {
         switch self {
         case .missingCloudKitContainerID:
             return "A syncing store needs a CloudKit container identifier. Pass StoreIdentifiers explicitly."
+        case .missingAppGroupID:
+            return "A widget reads the app's store through the App Group. Pass StoreIdentifiers with an appGroupID."
         }
     }
 }
@@ -199,11 +204,40 @@ public enum HabitStoreContainer {
             throw StoreConfigurationError.missingCloudKitContainerID
         }
 
+        if resolved(for: role, platform: platform) == .readOnlyWidget {
+            // Without the group, `.automatic` would open an empty store in the extension's own
+            // sandbox, and the widget would show "no habits" for good with nothing saying why.
+            guard identifiers.appGroupID != nil else { throw StoreConfigurationError.missingAppGroupID }
+            return try readOnlyContainer(
+                syncedConfiguration(role: role, identifiers: identifiers, platform: platform)
+            )
+        }
+
         return try ModelContainer(
             for: Schema(HabitSchemaV1.models, version: HabitSchemaV1.versionIdentifier),
             migrationPlan: HabitMigrationPlan.self,
             configurations: syncedConfiguration(role: role, identifiers: identifiers, platform: platform),
             healthConfiguration(role: role, platform: platform)
+        )
+    }
+
+    /// A container over the synced store alone, for a process that only reads it.
+    ///
+    /// A widget has no use for health bindings, and opening the health configuration from a
+    /// widget would not reach the app's health store anyway, since that store is deliberately
+    /// outside the App Group. It would create an empty one in the extension's sandbox instead.
+    /// So the widget opens the synced configuration and nothing else.
+    ///
+    /// **The model is still the app's whole model.** A store file records the version hashes
+    /// of the model that created it, and the app creates it with every model, health binding
+    /// included. Opening it with the synced models alone reads as a different model, Core Data
+    /// sets out to migrate the file in place, and a read-only store cannot be written, so the
+    /// open fails. Found by a test, not by reasoning.
+    static func readOnlyContainer(_ configuration: ModelConfiguration) throws -> ModelContainer {
+        try ModelContainer(
+            for: Schema(HabitSchemaV1.models, version: HabitSchemaV1.versionIdentifier),
+            migrationPlan: HabitMigrationPlan.self,
+            configurations: configuration
         )
     }
 }

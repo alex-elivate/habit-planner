@@ -109,7 +109,10 @@ struct AddHabitRow: View {
     var body: some View {
         switch model.gate(for: routine) {
         case .open:
-            Button("Add a habit", systemImage: "plus", action: add)
+            Button(model.planned.active(for: routine).map { "Add \($0.title)" } ?? "Add a habit",
+                   systemImage: "plus", action: add)
+            // Still editable once unlocked, so a plan can be changed or dropped without adding it.
+            if model.planned.active(for: routine) != nil { PlannedHabitRow(routine: routine) }
         case .unreadable:
             Label("Some habits were saved by a newer version of the app. Update this device to add habits.",
                   systemImage: "exclamationmark.triangle")
@@ -128,30 +131,85 @@ struct AddHabitRow: View {
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .combine)
             }
+            PlannedHabitRow(routine: routine)
         }
     }
 }
 
-extension LockInGate.Assessment {
-    /// What stands between this habit and the next, in the terms the person can act on.
-    var explanation: String {
-        let sessions = "\(min(elapsedOccurrences, requiredOccurrences)) of \(requiredOccurrences) sessions"
-        let rateText = rate.map { "\(Int(($0 * 100).rounded()))%" }
-        let needed = "\(Int((requiredRate * 100).rounded()))%"
-        switch decision {
-        case .open:
-            return "Bedded in."
-        case .blocked(.notEnoughHistory):
-            return rateText.map { "\(sessions), \($0) so far." } ?? "\(sessions)."
-        case .blocked(.rateTooLow):
-            return "\(sessions) done at \(rateText ?? "–"). Needs \(needed)."
-        case .blocked(.recentDoubleMiss(let day)):
-            // The pair counts while its second miss is within the window, so it drops out
-            // the day after the window passes it.
-            let missed = day.start(in: .current).formatted(.dateTime.month().day())
-            let clears = day.advanced(by: LockInGate.doubleMissWindowDays + 1)
-                .start(in: .current).formatted(.dateTime.month().day())
-            return "Missed twice in a row on \(missed). That stops counting on \(clears)."
+/// The habit this routine will add once it unlocks, which the widgets show as the thing to
+/// work towards.
+struct PlannedHabitRow: View {
+    @Environment(AppModel.self) private var model
+    let routine: RoutineSlot
+    @State private var editing = false
+
+    var body: some View {
+        let plan = model.planned.active(for: routine)
+        Button {
+            editing = true
+        } label: {
+            if let plan {
+                LabeledContent("Planned next", value: plan.title)
+            } else {
+                Label("Plan the next habit", systemImage: "square.and.pencil")
+            }
+        }
+        .accessibilityIdentifier("plan.\(routine.rawValue)")
+        .sheet(isPresented: $editing) {
+            NavigationStack { PlanHabitView(routine: routine, title: plan?.title ?? "") }
+        }
+    }
+}
+
+struct PlanHabitView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let routine: RoutineSlot
+    @State var title: String
+    private let original: String
+
+    init(routine: RoutineSlot, title: String) {
+        self.routine = routine
+        self._title = State(initialValue: title)
+        self.original = title
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Habit", text: $title, prompt: Text("Meditate"))
+                    .font(.headline)
+                    .accessibilityIdentifier("plan.title")
+            } footer: {
+                Text("Something to work towards. It is added to your \(routine.title.lowercased()) routine once the newest habit there beds in, and your widgets show it until then.")
+            }
+            if !original.isEmpty {
+                Section {
+                    Button("Clear plan", role: .destructive) {
+                        Task {
+                            await model.clearPlan(for: routine)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Next habit")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    Task {
+                        await model.plan(title, for: routine)
+                        dismiss()
+                    }
+                }
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || title == original)
+            }
         }
     }
 }

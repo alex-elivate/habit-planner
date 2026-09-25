@@ -54,7 +54,7 @@ public actor HabitStoreActor {
     /// The actor holds one context for the life of the process. Without the rollback, a
     /// single failed save leaves its changes staged and every later save re-attempts them,
     /// so one bad row poisons every write that follows it for as long as the app runs.
-    private func commit() throws {
+    func commit() throws {
         do {
             try modelContext.save()
         } catch {

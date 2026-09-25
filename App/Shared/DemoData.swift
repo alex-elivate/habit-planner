@@ -1,13 +1,15 @@
 #if DEBUG
 import Foundation
 import HabitKit
+import HabitStore
 
 /// A few weeks of plausible history for the simulator and for screenshots.
 ///
-/// Debug only, and only ever written into the in-memory store. See `StoreMode`.
+/// Debug only, and only ever written into the in-memory store. See `StoreMode`. Shared by the
+/// iPhone and watch apps, and neither one bridges to the other in that mode, so demo habits
+/// can never reach a real replica.
 enum DemoData {
-    static func seed(into model: AppModel) async {
-        let timeZone = model.timeZone
+    static func seed(into store: HabitStoreActor, timeZone: TimeZone = .current) async {
         let today = DayKey(.now, in: timeZone)
 
         let habits = [
@@ -27,16 +29,15 @@ enum DemoData {
         ]
 
         for habit in habits {
-            try? await model.store.upsert(habit)
+            try? await store.upsert(habit)
             for day in habit.startedOn.through(today.advanced(by: -1)) where habit.isScheduled(on: day) {
                 // Roughly nine in ten, deterministic so screenshots are repeatable.
                 guard (day.ordinal + habit.order * 3) % 10 != 0 else { continue }
                 let instant = day.start(in: timeZone).addingTimeInterval(7.5 * 3_600)
-                _ = try? await model.store.record(CompletionEvent(
+                _ = try? await store.record(CompletionEvent(
                     habitID: habit.id, dayKey: day, occurredAt: instant, timeZoneIdentifier: timeZone.identifier))
             }
         }
-        await model.reload()
     }
 }
 #endif

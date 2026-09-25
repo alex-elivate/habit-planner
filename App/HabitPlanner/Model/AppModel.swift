@@ -3,6 +3,7 @@ import Foundation
 import HabitKit
 import HabitStore
 import Observation
+import WidgetKit
 
 /// Everything the interface reads, folded fresh from the store.
 ///
@@ -18,6 +19,8 @@ final class AppModel {
     private(set) var histories: [HabitHistory] = []
     private(set) var runsToday: [RoutineSlot: RoutineRun] = [:]
     private(set) var bindings: [UUID: HealthBinding] = [:]
+    /// The habit each routine plans to add next. Cleared plans are kept, see `PlannedHabit`.
+    private(set) var planned: [RoutineSlot: PlannedHabit] = [:]
 
     /// Records this build could not read. Shown in Settings rather than dropped silently, since
     /// a record written by a newer build is exactly the kind of failure nobody would notice.
@@ -27,6 +30,10 @@ final class AppModel {
     var failure: String?
 
     private var remoteChanges: (any NSObjectProtocol)?
+
+    /// Runs after every successful reload, which follows every write and every change CloudKit
+    /// delivers. The watch bridge sends a snapshot from here.
+    @ObservationIgnored var afterReload: (() -> Void)?
 
     init(store: HabitStoreActor, mode: StoreMode) {
         self.store = store
@@ -44,6 +51,7 @@ final class AppModel {
             let loaded = try await store.loadHistories(today: today)
             let runs = try await store.loadRoutineRuns()
             let bindings = try await store.loadHealthBindings()
+            let plans = try await store.loadPlannedHabits()
 
             histories = loaded.values
             runsToday = Dictionary(
@@ -54,10 +62,36 @@ final class AppModel {
             // a duplicate key would otherwise crash every launch.
             self.bindings = Dictionary(bindings.values.map { ($0.habitID, $0) },
                                        uniquingKeysWith: { first, _ in first })
-            unreadable = loaded.skipped + runs.skipped + bindings.skipped
+            planned = plans.values.resolved()
+            unreadable = loaded.skipped + runs.skipped + bindings.skipped + plans.skipped
+            refreshWidgets()
+            afterReload?()
         } catch {
             failure = "Could not read your habits. \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Widgets
+
+    /// What the widgets showed after the last reload, to tell whether they need another.
+    ///
+    /// Held in memory only. It exists to save a reload, not to be read by anything, and a
+    /// fresh launch simply reloads once.
+    @ObservationIgnored private var lastGlance: Glance?
+
+    /// Asks the widgets for a new timeline if anything they show has changed.
+    ///
+    /// A reload follows every write and every CloudKit delivery, and most change nothing a
+    /// widget shows. Reloads the app asks for while in the background count against a daily
+    /// budget, so they are spent only when the fold says the widget is out of date.
+    private func refreshWidgets() {
+        // Widgets read the syncing store in the App Group. The debug stores are elsewhere.
+        guard mode.syncs else { return }
+        let glance = Glance(histories: histories, runs: runsToday, planned: planned,
+                            gateHasUnreadableInput: gateHasUnreadableInput, at: .now, in: timeZone)
+        guard glance != lastGlance else { return }
+        lastGlance = glance
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetLink.glanceKind)
     }
 
     /// Reloads whenever CloudKit delivers changes from another device.
@@ -105,13 +139,15 @@ final class AppModel {
     /// reading them, so any one of them holds every routine shut.
     var gateHasUnreadableInput: Bool { unreadable.contains(where: \.couldOpenGate) }
 
+    /// Decided by `RoutineGlance.Unlock`, the same rule the widgets show, so the two can never
+    /// disagree about whether a routine is open.
     func gate(for routine: RoutineSlot) -> Gate {
-        // An unreadable newest habit drops out of the fold, and the gate would then judge an
-        // older one that has already bedded in and open. Refusing is the safe direction.
-        if gateHasUnreadableInput { return .unreadable }
-        guard !LockInGate.canAddHabit(to: routine, histories: histories).isOpen else { return .open }
-        // The gate's own selection, so the progress shown is the habit actually judged.
-        return .blocked(LockInGate.judged(in: routine, histories: histories).map(LockInGate.assess))
+        switch RoutineGlance.Unlock(routine: routine, histories: histories,
+                                    gateHasUnreadableInput: gateHasUnreadableInput) {
+        case .open: .open
+        case .unavailable: .unreadable
+        case .beddingIn(_, let assessment): .blocked(assessment)
+        }
     }
 
     /// Whether `routine` has anything left to run today.
@@ -191,7 +227,24 @@ final class AppModel {
             schedule: draft.schedule,
             startedOn: today
         )
-        await write { try await store.upsert(habit) }
+        let added = await write { try await store.upsert(habit) }
+        // The plan is used up once the habit it named exists. A different habit added in its
+        // place leaves the plan standing for the next time the routine unlocks.
+        if added, let plan = planned.active(for: draft.routine),
+           plan.title.localizedCaseInsensitiveCompare(habit.title) == .orderedSame {
+            await clearPlan(for: draft.routine)
+        }
+    }
+
+    // MARK: - Planned habits
+
+    /// Plans the habit `routine` adds next. A blank title clears the plan.
+    func plan(_ title: String, for routine: RoutineSlot) async {
+        await write { try await store.record(PlannedHabit(routine: routine, title: title, recordedAt: .now)) }
+    }
+
+    func clearPlan(for routine: RoutineSlot) async {
+        await write { try await store.record(PlannedHabit.cleared(routine, at: .now)) }
     }
 
     func update(_ habitID: UUID, from draft: HabitDraft) async throws {
@@ -370,21 +423,5 @@ extension String {
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-}
-
-extension RoutineSlot {
-    var title: String {
-        switch self {
-        case .morning: "Morning"
-        case .evening: "Evening"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .morning: "sunrise"
-        case .evening: "moon.stars"
-        }
     }
 }

@@ -62,6 +62,14 @@ struct HabitEditorView: View {
             }
         }
         .interactiveDismissDisabled(saving)
+        .onAppear {
+            // A new habit starts from the routine's plan, if it has one. Only when the title is
+            // still empty, so reopening the sheet never overwrites what was typed.
+            if case .new(let routine) = mode, draft.title.isEmpty,
+               let plan = model.planned.active(for: routine) {
+                draft.title = plan.title
+            }
+        }
     }
 
     private var isNew: Bool {

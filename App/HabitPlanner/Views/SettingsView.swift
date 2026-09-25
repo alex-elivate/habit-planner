@@ -6,6 +6,7 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(ReminderSettings.self) private var reminders
+    @Environment(PhoneBridge.self) private var bridge: PhoneBridge?
     @Environment(\.dismiss) private var dismiss
 
     @State private var notificationsDenied = false
@@ -32,6 +33,10 @@ struct SettingsView: View {
                 LabeledContent("Storage", value: model.mode.syncs ? "iCloud" : "This device only (debug)")
                 if model.mode.syncs {
                     LabeledContent("iCloud account", value: iCloud ?? "Checking…")
+                }
+                if let problem = bridge?.problem {
+                    Label(problem, systemImage: "applewatch.slash")
+                        .foregroundStyle(.red)
                 }
             }
 

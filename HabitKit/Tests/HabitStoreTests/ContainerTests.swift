@@ -207,7 +207,8 @@ struct SchemaPrimingTests {
             "StoredCompletionEvent": ["payloadJSON"],
             "StoredLifecycleEvent": ["payloadJSON"],
             "StoredRoutineRun": ["startedAt", "endedAt", "steps", "payloadJSON"],
-            "StoredRoutineStep": ["startedAt", "endedAt", "run", "payloadJSON"]
+            "StoredRoutineStep": ["startedAt", "endedAt", "run", "payloadJSON"],
+            "StoredPlannedHabit": ["payloadJSON"]
         ]
         #expect(optionalColumns() == expected)
     }
@@ -236,6 +237,8 @@ struct SchemaPrimingTests {
         #expect(r.step.endedAt != nil)
         #expect(r.step.run != nil)
         #expect(r.step.payloadJSON != nil)
+
+        #expect(r.planned.payloadJSON != nil)
     }
 
     @Test("Priming exercises the relationship and leaves nothing behind")
@@ -251,5 +254,6 @@ struct SchemaPrimingTests {
         #expect(try context.fetchCount(FetchDescriptor<StoredLifecycleEvent>()) == 0)
         #expect(try context.fetchCount(FetchDescriptor<StoredRoutineRun>()) == 0)
         #expect(try context.fetchCount(FetchDescriptor<StoredRoutineStep>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<StoredPlannedHabit>()) == 0)
     }
 }

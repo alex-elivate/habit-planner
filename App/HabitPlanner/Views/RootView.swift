@@ -2,10 +2,6 @@ import HabitKit
 import SwiftUI
 import UIKit
 
-extension RoutineSlot: @retroactive Identifiable {
-    public var id: String { rawValue }
-}
-
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
@@ -42,6 +38,11 @@ struct RootView: View {
         .onChange(of: router.requestedRoutine, initial: true) { _, routine in
             guard let routine else { return }
             router.requestedRoutine = nil
+            running = routine
+        }
+        // A widget tap. It can only ask for a routine, so that is all this reads from it.
+        .onOpenURL { url in
+            guard let routine = WidgetLink.routine(from: url) else { return }
             running = routine
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in

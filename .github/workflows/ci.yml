@@ -38,7 +38,7 @@ jobs:
         run: swift test
 
   app:
-    name: iOS app
+    name: iOS and watch apps
     runs-on: macos-latest
     defaults:
       run:
@@ -51,6 +51,22 @@ jobs:
         run: |
           xcodebuild -version
           xcrun simctl list runtimes
+
+      - name: Make sure the watchOS platform is installed
+        # The iOS app embeds the watch app, so neither builds without it. Runner images
+        # usually carry it, and downloading it only when missing keeps a normal run fast.
+        run: |
+          if ! xcodebuild -showsdks | grep -q watchsimulator; then
+            xcodebuild -downloadPlatform watchOS
+          fi
+
+      - name: Build the watch app
+        run: |
+          xcodebuild build \
+            -project HabitPlanner.xcodeproj \
+            -scheme HabitPlannerWatch \
+            -destination 'generic/platform=watchOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Pick a simulator
         # Named devices change with every runner image, so take the first available iPhone

@@ -34,7 +34,8 @@ public enum HabitSchemaV1: VersionedSchema {
             StoredCompletionEvent.self,
             StoredLifecycleEvent.self,
             StoredRoutineRun.self,
-            StoredRoutineStep.self
+            StoredRoutineStep.self,
+            StoredPlannedHabit.self
         ]
     }
 
