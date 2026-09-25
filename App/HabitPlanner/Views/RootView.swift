@@ -40,6 +40,11 @@ struct RootView: View {
             router.requestedRoutine = nil
             running = routine
         }
+        // A widget tap. It can only ask for a routine, so that is all this reads from it.
+        .onOpenURL { url in
+            guard let routine = WidgetLink.routine(from: url) else { return }
+            running = routine
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             // Midnight, a time zone change, or a clock change. Today may be a different day.
             refresh()

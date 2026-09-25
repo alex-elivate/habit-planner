@@ -53,6 +53,11 @@ struct WatchRootView: View {
             router.requestedRoutine = nil
             running = routine
         }
+        // A complication tap.
+        .onOpenURL { url in
+            guard let routine = WidgetLink.routine(from: url) else { return }
+            running = routine
+        }
     }
 
     private func reload() {

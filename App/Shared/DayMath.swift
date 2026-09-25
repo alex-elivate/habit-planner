@@ -1,7 +1,7 @@
 import Foundation
 import HabitKit
 
-extension DayKey {
+nonisolated extension DayKey {
     /// The instant this civil day begins in `timeZone`.
     ///
     /// Only the app needs this. The domain never turns a day back into a `Date`, because a day

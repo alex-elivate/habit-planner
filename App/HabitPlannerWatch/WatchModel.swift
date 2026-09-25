@@ -2,6 +2,7 @@ import Foundation
 import HabitKit
 import HabitStore
 import Observation
+import WidgetKit
 
 /// Everything the watch interface reads, folded fresh from the watch's own store.
 ///
@@ -12,6 +13,8 @@ import Observation
 @Observable
 final class WatchModel {
     let store: HabitStoreActor
+    /// Whether the complication reads this store. Not the in-memory store, which it cannot see.
+    let complicationsReadThisStore: Bool
 
     private(set) var today: DayKey
     private(set) var histories: [HabitHistory] = []
@@ -19,6 +22,10 @@ final class WatchModel {
     /// Whether the replica has ever received a habit. Until it has, the watch explains itself
     /// rather than showing two empty routines.
     private(set) var hasHabits = false
+    private(set) var planned: [RoutineSlot: PlannedHabit] = [:]
+    /// Whether a record the lock-in gate reads could not be read. The watch never gates, but
+    /// the complication shows the gate's progress and must not show it as open.
+    private(set) var gateHasUnreadableInput = false
 
     /// The last write that failed, for the interface to show.
     var failure: String?
@@ -28,8 +35,9 @@ final class WatchModel {
     @ObservationIgnored var beforeWrite: ((DayKey) -> Void)?
     @ObservationIgnored var afterWrite: (() -> Void)?
 
-    init(store: HabitStoreActor) {
+    init(store: HabitStoreActor, complicationsReadThisStore: Bool) {
         self.store = store
+        self.complicationsReadThisStore = complicationsReadThisStore
         self.today = DayKey(.now, in: .current)
     }
 
@@ -40,15 +48,35 @@ final class WatchModel {
         do {
             let loaded = try await store.loadHistories(today: today)
             let runs = try await store.loadRoutineRuns()
+            let plans = try await store.loadPlannedHabits()
             histories = loaded.values
+            planned = plans.values.resolved()
+            gateHasUnreadableInput = loaded.skipped.contains(where: \.couldOpenGate)
             hasHabits = !loaded.values.isEmpty
             runsToday = Dictionary(
                 runs.values.filter { $0.dayKey == today }.map { ($0.routine, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
+            refreshComplications()
         } catch {
             failure = "Could not read your habits. \(error.localizedDescription)"
         }
+    }
+
+    /// What the complications showed after the last reload. In memory only, to save reloads.
+    @ObservationIgnored private var lastGlance: Glance?
+
+    /// Asks the complications for a new timeline if anything they show has changed.
+    ///
+    /// The watch's reload budget is small, and a snapshot merge or a runner step reloads the
+    /// model whether or not a complication would look any different.
+    private func refreshComplications() {
+        guard complicationsReadThisStore else { return }
+        let glance = Glance(histories: histories, runs: runsToday, planned: planned,
+                            gateHasUnreadableInput: gateHasUnreadableInput, at: .now, in: timeZone)
+        guard glance != lastGlance else { return }
+        lastGlance = glance
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetLink.glanceKind)
     }
 
     func history(for habitID: UUID) -> HabitHistory? {

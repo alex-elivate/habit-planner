@@ -32,7 +32,8 @@ extension HabitStoreActor {
             habits: try loadHabits().values,
             completions: try loadCompletionEvents().values,
             lifecycle: try loadLifecycleEvents().values,
-            runs: try loadRoutineRuns().values.filter { $0.dayKey >= earliestRun }
+            runs: try loadRoutineRuns().values.filter { $0.dayKey >= earliestRun },
+            planned: try loadPlannedHabits().values
         )
     }
 
@@ -56,6 +57,7 @@ extension HabitStoreActor {
             try stageHabits(snapshot.habits, written: &written, skipped: &skipped)
             try stageCompletions(snapshot.completions, written: &written, skipped: &skipped)
             try stageLifecycle(snapshot.lifecycle, written: &written, skipped: &skipped)
+            try stagePlans(snapshot.planned, written: &written, skipped: &skipped)
             if modelContext.hasChanges { try commit() }
         } catch {
             modelContext.rollback()

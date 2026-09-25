@@ -122,7 +122,7 @@ struct WatchPayloadTests {
         let snapshot = try #require(
             try JSONSerialization.jsonObject(with: BridgeCodec.encode(sampleSnapshot())) as? [String: Any]
         )
-        #expect(Set(snapshot.keys) == ["format", "generatedAt", "habits", "completions", "lifecycle", "runs"])
+        #expect(Set(snapshot.keys) == ["format", "generatedAt", "habits", "completions", "lifecycle", "runs", "planned"])
 
         let report = try #require(
             try JSONSerialization.jsonObject(with: BridgeCodec.encode(

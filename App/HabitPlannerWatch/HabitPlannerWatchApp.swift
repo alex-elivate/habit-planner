@@ -35,6 +35,11 @@ struct HabitPlannerWatchApp: App {
 ///
 /// Always a local store. `HabitStoreContainer` downgrades any request to sync on watchOS
 /// anyway, but asking for `.localApp` says what is meant.
+///
+/// The store lives in the watch's App Group container, where the complication can read it.
+/// Phase 4 kept it in the app's own container. No build of that ever ran on a real watch, so
+/// there is no store in the old place to carry over, and a replica can be rebuilt from the
+/// phone's next snapshot in any case, except for writes not yet reported.
 @Observable
 final class WatchLaunch {
     enum State {
@@ -58,15 +63,20 @@ final class WatchLaunch {
 
         do {
             if !inMemory {
-                // A fresh app container has no Application Support folder, and SwiftData does
-                // not create it. The first open then fails and only succeeds through Core
-                // Data's undocumented recovery path. Seen on the phone simulator for this same
-                // kind of store, and for the App Group store before that.
+                // A fresh group container has no Application Support folder, and SwiftData
+                // does not create it. The first open then fails and only succeeds through Core
+                // Data's undocumented recovery path. The bridge's own files still live in the
+                // app's container, so that folder is made too.
+                try AppIdentifiers.prepareGroupContainer()
                 try FileManager.default.createDirectory(at: .applicationSupportDirectory,
                                                         withIntermediateDirectories: true)
             }
-            let container = try HabitStoreContainer.container(role: inMemory ? .inMemory : .localApp)
-            let model = WatchModel(store: HabitStoreActor(modelContainer: container))
+            let container = try HabitStoreContainer.container(
+                role: inMemory ? .inMemory : .localApp,
+                identifiers: StoreIdentifiers(cloudKitContainerID: "", appGroupID: AppIdentifiers.appGroup)
+            )
+            let model = WatchModel(store: HabitStoreActor(modelContainer: container),
+                                   complicationsReadThisStore: !inMemory)
             state = .ready(model)
             if !inMemory {
                 let bridge = WatchBridge(model: model)

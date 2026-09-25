@@ -10,9 +10,9 @@ Most habit apps show a checklist and let you pick items in any order. That works
 
 ## Status
 
-Phase 4 of 8 is in progress: the watchOS app and its bridge to the iPhone are built, with 199
-package tests. Phase 3's iOS app is built and tested on the simulator. Neither has run on a
-physical device yet, and the CloudKit schema has not been primed or promoted. See
+Phases 3 to 5 are built and tested on simulators: the iOS app, the watchOS app and its bridge,
+and the widgets and complications, with 229 package tests. None of them has run on a physical
+device yet, and the CloudKit schema has not been primed or promoted. See
 [Before the first TestFlight build](#before-the-first-testflight-build).
 
 ## Platforms
@@ -333,6 +333,61 @@ sit in its replica for good, and anything sent back would reach CloudKit.
 The watch schedules none of its own. The phone's reminder is forwarded to the wrist when the
 phone is locked, and tapping it opens the watch runner on that routine.
 
+## Widgets and complications
+
+One widget, "Routine", in every family each platform supports. The iPhone gets home screen
+sizes small, medium and large, and lock screen circular, rectangular and inline. The watch gets
+circular, rectangular, inline and corner complications. Each shows the routine's next habit,
+today's progress, how close the newest habit is to bedding in, and the habit planned for when
+it does.
+
+### A widget folds the store, it does not read a summary
+
+The widget extension opens the shared store read only and folds it with the same HabitKit code
+the app uses, through `Glance`. The app never writes anything for a widget to read. A summary
+written after each reload would be derived state, and it would be wrong in exactly the cases
+that matter: a change delivered by CloudKit while the app is closed, or midnight arriving with
+nobody there to rewrite it.
+
+The widget opens the synced store only. The health store is outside the App Group on purpose,
+and a widget has no use for a binding. It still has to open that store with the app's whole
+model, health binding included. A store file records the hashes of the model that created it,
+and opening it with the synced models alone reads as a different model. Core Data then tries a
+migration, which a read-only store cannot run, so the open fails.
+
+The timeline has three entries at most: now, noon and midnight. Those are the only moments the
+answer can change without a record changing. Everything else is the app asking for a reload,
+and it asks only when the fold has actually changed, because reloads requested from the
+background count against a daily budget.
+
+Morning is featured until noon and evening after it. A finished morning hands over to the
+evening, and a routine with nothing due gives way to one that has something. An unfinished
+morning never comes back in the evening while the evening still has work, because by then it
+has been missed.
+
+### Tapping opens the runner
+
+Widgets are read only in this phase. A tap opens the app on the runner for the routine shown,
+through a `habitplanner://run/<routine>` link that carries nothing else. Ticking a habit from
+the widget itself needs App Intents, which is Phase 6.
+
+### The planned habit
+
+A routine can hold one planned habit, the one it will add once its newest habit beds in. The
+widget shows it as something to work towards, and adding a habit starts from it.
+
+It is the smallest record that does the job: the routine, which is its identity, the title,
+and `recordedAt` to decide between two devices that both wrote. A plan is cleared by writing
+an empty title, never by deleting the row, which keeps the watch snapshot's promise that a
+newer snapshot is always a superset of an older one. The lock-in gate never reads it.
+
+### The watch store moved into the App Group
+
+The complication runs in its own process and can only reach the watch's store through the
+watch's App Group container. The same group identifier names a separate container on each
+device, so nothing crosses between phone and watch this way. No Phase 4 build ever ran on a
+real watch, so there was no old store to move.
+
 ## Getting started
 
 ```bash
@@ -357,8 +412,17 @@ xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlannerWatch -desti
 ```
 
 `-LocalStore` (debug only) opens a persistent phone store that does not sync but does bridge
-to the watch, since an unsigned simulator build cannot open the syncing one. It is only
-useful on devices, for the reason in step 7 below.
+to the watch, for when an unsigned build cannot open the syncing one. It is only useful on
+devices, for the reason in step 8 below. Widgets never see it, since it sits outside the App
+Group.
+
+`WidgetCheck` puts the widget on a simulator's home screen, checks what it shows and that a tap
+opens the runner, and keeps screenshots in the result bundle. It runs the real syncing build and
+edits the home screen, so it is skipped unless asked for:
+
+```bash
+TEST_RUNNER_HABIT_WIDGET_CHECK=1 xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlanner -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:HabitPlannerUITests/WidgetCheck
+```
 
 ### Before the first TestFlight build
 
@@ -371,16 +435,20 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
    Developer, Prime CloudKit schema.
 3. **Check the dashboard.** In the CloudKit console, development environment of
    `iCloud.org.trusler.habitplanner`, confirm the record types `CD_StoredHabit`,
-   `CD_StoredCompletionEvent`, `CD_StoredLifecycleEvent`, `CD_StoredRoutineRun` and
-   `CD_StoredRoutineStep` exist with every field. There must be no record type for the health
+   `CD_StoredCompletionEvent`, `CD_StoredLifecycleEvent`, `CD_StoredRoutineRun`,
+   `CD_StoredRoutineStep` and `CD_StoredPlannedHabit` exist with every field. There must be no record type for the health
    binding.
 4. **Promote** the schema to production. After this, fields can be added and never renamed or
    removed.
 5. **Verify sync from a Release archive** on two devices. A Debug run is not evidence.
 6. **Watch App ID.** The first signed build registers `org.trusler.habitplanner.watchkitapp`
-   through automatic signing. It needs no capabilities: the watch has no iCloud, no App Group
-   and no HealthKit.
-7. **Verify the watch bridge on real hardware.** Run a routine on the watch with the phone in
+   through automatic signing. It needs the App Group `group.org.trusler.habitplanner`, so the
+   complication can read its store, and nothing else: no iCloud and no HealthKit.
+7. **Widget App IDs.** `org.trusler.habitplanner.widgets` and
+   `org.trusler.habitplanner.watchkitapp.widgets` each need the same App Group and nothing
+   else. Then check on each device that the widget and the complication show your habits, not
+   "Open the app".
+8. **Verify the watch bridge on real hardware.** Run a routine on the watch with the phone in
    another room, then bring it back and check the ticks arrive on the phone and in iCloud.
    This cannot be done on simulators: the watchOS Simulator does not support `transferFile`,
    so both sides report a transfer delivered and the receiving app never hears of it. The
@@ -394,8 +462,8 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 | 1 | HabitKit domain package | Done |
 | 2 | SwiftData persistence and CloudKit schema | Done |
 | 3 | iOS app and routine runner | Built, awaiting device checks |
-| 4 | watchOS app and sync bridge | In progress |
-| 5 | Widgets and watch complication | |
+| 4 | watchOS app and sync bridge | Built, awaiting device checks |
+| 5 | Widgets and watch complication | Built, awaiting device checks |
 | 6 | App Intents, Siri, Shortcuts | |
 | 7 | macOS app and reporting | |
 | 8 | Lock-in ceremony and charts | |

@@ -23,13 +23,20 @@ public struct WatchSnapshot: Codable, Sendable {
     public let lifecycle: [LifecycleEvent]
     /// Recent runs only, so a routine started on one device can be resumed on the other.
     public let runs: [RoutineRun]
+    /// The surviving plan for each routine, cleared ones included, so a plan cleared on the
+    /// phone clears on the watch rather than lingering there.
+    ///
+    /// Added without a format change. An older watch ignores a key it does not know, which
+    /// costs it nothing but the plan, and a snapshot from an older phone decodes with none.
+    public let planned: [PlannedHabit]
 
     public init(
         generatedAt: Date,
         habits: [Habit],
         completions: [CompletionEvent],
         lifecycle: [LifecycleEvent],
-        runs: [RoutineRun]
+        runs: [RoutineRun],
+        planned: [PlannedHabit] = []
     ) {
         self.format = Self.currentFormat
         self.generatedAt = generatedAt
@@ -37,6 +44,22 @@ public struct WatchSnapshot: Codable, Sendable {
         self.completions = completions
         self.lifecycle = lifecycle
         self.runs = runs
+        self.planned = planned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case format, generatedAt, habits, completions, lifecycle, runs, planned
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        format = try container.decode(Int.self, forKey: .format)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        habits = try container.decode([Habit].self, forKey: .habits)
+        completions = try container.decode([CompletionEvent].self, forKey: .completions)
+        lifecycle = try container.decode([LifecycleEvent].self, forKey: .lifecycle)
+        runs = try container.decode([RoutineRun].self, forKey: .runs)
+        planned = try container.decodeIfPresent([PlannedHabit].self, forKey: .planned) ?? []
     }
 }
 

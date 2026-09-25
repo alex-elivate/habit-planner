@@ -49,7 +49,7 @@ enum StoreMode: Equatable {
     func makeContainer() throws -> ModelContainer {
         switch self {
         case .syncing:
-            try Self.prepareGroupContainer()
+            try AppIdentifiers.prepareGroupContainer()
             return try HabitStoreContainer.container(role: .syncingApp, identifiers: AppIdentifiers.store)
         case .local:
             // Outside the App Group, in the app's own Application Support, which a fresh
@@ -60,19 +60,5 @@ enum StoreMode: Equatable {
         case .inMemory:
             return try HabitStoreContainer.container(role: .inMemory)
         }
-    }
-
-    /// Creates the directory SwiftData puts a group-container store in.
-    ///
-    /// A fresh App Group container has no `Library/Application Support`, and SwiftData does not
-    /// create it. The first open fails, Core Data logs a sandbox denial, then a recovery path
-    /// creates the folder and retries. Observed working on the simulator, but that is an
-    /// undocumented fallback standing between the app and its only store, so it is not relied on.
-    private static func prepareGroupContainer() throws {
-        guard let group = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: AppIdentifiers.appGroup
-        ) else { return }
-        let directory = group.appending(path: "Library/Application Support", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 }
