@@ -140,8 +140,9 @@ struct AddHabitRow: View {
         case .blocked(let judged):
             if let habit = model.history(for: judged.habitID)?.habit {
                 VStack(alignment: .leading, spacing: 6) {
-                    if let waiting = model.startingHabitsBeddingIn(routine), waiting > 1 {
-                        Label("Next habit unlocks when your \(waiting) starting habits bed in", systemImage: "lock")
+                    let waiting = model.waitingOn(routine).count
+                    if waiting > 1 {
+                        Label("Next habit unlocks when your \(waiting) newest habits bed in", systemImage: "lock")
                             .font(.subheadline)
                         Text("\(habit.title) has the furthest to go.").font(.caption)
                     } else {

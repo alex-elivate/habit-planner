@@ -33,6 +33,12 @@ public struct HabitHistory: Hashable, Sendable {
     /// habit without the raw log.
     private let completedDays: Set<DayKey>
 
+    /// Whether a completion or a lifecycle change is dated after `today`, which happens only
+    /// when the clock has gone back since it was recorded.
+    public var hasRecordsAfterToday: Bool {
+        completedDays.contains { $0 > today } || lifecycle.transitions.contains { $0.day > today }
+    }
+
     public init(
         habit: Habit,
         events: some Sequence<CompletionEvent>,

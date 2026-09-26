@@ -11,7 +11,7 @@ Most habit apps show a checklist and let you pick items in any order. That works
 ## Status
 
 Phases 3 to 7 are built: the iOS app, the watchOS app and its bridge, the widgets and
-complications, Siri and Shortcuts, and the Mac app, with 253 package tests. The iPhone and watch
+complications, Siri and Shortcuts, and the Mac app, with 259 package tests. The iPhone and watch
 apps are tested on simulators. The Mac app has been run in its demo mode only. None of them has run on a physical
 device yet, and the CloudKit schema has not been primed or promoted. See
 [Before the first TestFlight build](#before-the-first-testflight-build).
@@ -82,18 +82,22 @@ That range is the point. Clear deliberately avoids naming a number of days. The 
 #### The starting set
 
 Somebody who already has a routine should not have to enter it one habit every four weeks. On a
-routine's first day, any number of habits can join. That day is worked out from join days alone,
-so nothing records that setup happened: a routine is in setup while it is empty or every habit
-in it joined today, and the window closes at midnight.
+routine's first day, any number of habits can join. That day is worked out from start days
+alone, so nothing records that setup happened. A routine is in setup while it has never had a
+habit, or every habit it has ever had started today, and the window closes at midnight.
+Archived habits count, so archiving a whole routine does not reopen it. Neither does winding
+the clock back: anything recorded after "today" means today is not the day it claims to be.
 
-Those habits are then judged together. The gate waits on the starting habit furthest from
-bedding in, and opens once every one of them has. Habits somebody already does pass in about four
-weeks, and a starting set too large to keep up shows up as the reason the routine stays shut.
-Once a later habit joins, only that habit is judged, as below.
+The gate judges the newest **cohort**, every habit that joined on the latest join day, and
+waits on whichever is furthest from bedding in. A cohort is normally one habit. After setup it
+is the whole starting set, so the routine opens only once every starting habit has bedded in.
+Habits somebody already does pass in about four weeks, and a starting set too large to keep up
+shows up as the reason the routine stays shut. Two devices that each add a habit on the same
+day, before either sees the other's, also form a cohort, and both are judged.
 
 The app opens on a setup screen for each routine when nothing is stored. It says to skip it on a
-second device, and closes itself if habits arrive from iCloud before anything is typed, since
-setting up again there would duplicate them.
+second device, and closes itself if habits arrive from iCloud before anything is typed. If they
+arrive after, it adds nothing, since the routine is no longer in setup.
 
 #### After the starting set
 
@@ -103,7 +107,9 @@ sidestepped:
 - **A paused habit still holds the gate.** Otherwise the person could pause the newest habit, add
   another, and resume, leaving two bedding in at once. Archiving is what releases it.
 - **Restoring from the archive works like adding.** It is allowed when the gate is open or the
-  habit had already bedded in, and a restored habit rejoins the routine on the day it comes back.
+  habit had already bedded in. A restored habit that had not bedded in rejoins the routine on
+  the day it comes back, and is judged next. One that had bedded in takes its old place back,
+  so it cannot stand in for a newer habit that is still bedding in.
 - **A schedule change may not open a shut gate.** Nothing derived is stored, so changing a daily
   habit to three days a week re-judges every past day, and missed off-days stop counting as
   misses. That is allowed except where it would unlock the routine early.

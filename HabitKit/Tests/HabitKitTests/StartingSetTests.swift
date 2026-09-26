@@ -61,7 +61,7 @@ struct StartingSetTests {
         let rough = makeHistory(pattern(length: 60, missesAt: Set(0..<30)))
         let solid = makeHistory(pattern(length: 60, missesAt: []))
         let added = makeHistory(pattern(missesAt: []))
-        #expect(LockInGate.startingSet(in: .morning, histories: [rough, solid, added]).count == 2)
+        #expect(LockInGate.newestCohort(in: .morning, histories: [rough, solid, added]).map(\.habit.id) == [added.habit.id])
         #expect(LockInGate.canAddHabit(to: .morning, histories: [rough, solid, added]) == .open)
     }
 
@@ -81,5 +81,87 @@ struct StartingSetTests {
                                  stateChangedOn: referenceToday.advanced(by: -20))
         #expect(LockInGate.judged(in: .morning, histories: [solid, paused])?.habit.id == paused.habit.id)
         #expect(LockInGate.canAddHabit(to: .morning, histories: [solid, paused]) != .open)
+    }
+
+    // MARK: - Ways around it, found in review
+
+    func habit(startedDaysAgo: Int, id: UUID = UUID()) -> Habit {
+        Habit(id: id, title: "h", routine: .morning, order: 0, schedule: .daily,
+              startedOn: referenceToday.advanced(by: -startedDaysAgo))
+    }
+
+    func done(_ habit: Habit, daysAgo: some Sequence<Int>) -> [CompletionEvent] {
+        daysAgo.map {
+            CompletionEvent(habitID: habit.id, dayKey: referenceToday.advanced(by: -$0),
+                            occurredAt: .distantPast, timeZoneIdentifier: "UTC")
+        }
+    }
+
+    func state(_ habit: Habit, _ state: LifecycleEvent.State, daysAgo: Int) -> LifecycleEvent {
+        LifecycleEvent(habitID: habit.id, dayKey: referenceToday.advanced(by: -daysAgo), state: state,
+                       occurredAt: .distantPast, timeZoneIdentifier: "UTC")
+    }
+
+    @Test("Archiving a whole routine does not reopen setup")
+    func archivingEverythingKeepsSetupShut() {
+        let old = habit(startedDaysAgo: 60)
+        let archived = HabitHistory(habit: old, events: done(old, daysAgo: 1...60),
+                                    lifecycle: [state(old, .archived, daysAgo: 0)], today: referenceToday)
+        let fresh = makeHistory("")
+        #expect(!LockInGate.isSettingUp(.morning, histories: [archived]))
+        #expect(!LockInGate.isSettingUp(.morning, histories: [archived, fresh]))
+        #expect(LockInGate.canAddHabit(to: .morning, histories: [archived, fresh]) != .open)
+    }
+
+    @Test("A habit restored after bedding in cannot stand in for one still bedding in")
+    func restoredHabitKeepsItsOldPlace() {
+        // Bedded in over 60 days, archived 10 days ago, restored today.
+        let veteran = habit(startedDaysAgo: 70)
+        let restored = HabitHistory(habit: veteran, events: done(veteran, daysAgo: 11...70),
+                                    lifecycle: [state(veteran, .archived, daysAgo: 10), state(veteran, .active, daysAgo: 0)],
+                                    today: referenceToday)
+        let young = makeHistory(pattern(length: 5, missesAt: []))
+        #expect(LockInGate.gateJoinDay(restored) == veteran.startedOn)
+        #expect(LockInGate.judged(in: .morning, histories: [restored, young])?.habit.id == young.habit.id)
+        #expect(LockInGate.canAddHabit(to: .morning, histories: [restored, young]) != .open)
+    }
+
+    @Test("A habit restored before bedding in queues as the newest")
+    func unfinishedRestoreStillQueues() {
+        let dropped = habit(startedDaysAgo: 40)
+        let restored = HabitHistory(habit: dropped, events: done(dropped, daysAgo: 31...40),
+                                    lifecycle: [state(dropped, .archived, daysAgo: 30), state(dropped, .active, daysAgo: 1)],
+                                    today: referenceToday)
+        let settled = makeHistory(pattern(length: 60, missesAt: []))
+        #expect(LockInGate.gateJoinDay(restored) == referenceToday.advanced(by: -1))
+        #expect(LockInGate.judged(in: .morning, histories: [settled, restored])?.habit.id == restored.habit.id)
+    }
+
+    @Test("Habits added the same day on two devices are judged together")
+    func sameDayFromTwoDevicesIsACohort() {
+        let settled = makeHistory(pattern(length: 60, missesAt: []))
+        let fromPhone = makeHistory(pattern(length: 3, missesAt: []))
+        let fromMac = makeHistory(pattern(length: 3, missesAt: [2]))
+        let histories = [settled, fromPhone, fromMac]
+        #expect(Set(LockInGate.newestCohort(in: .morning, histories: histories).map(\.habit.id))
+                == [fromPhone.habit.id, fromMac.habit.id])
+        #expect(LockInGate.waitingOn(in: .morning, histories: histories).count == 2)
+    }
+
+    @Test("Winding the clock back to the first day does not reopen setup")
+    func clockBackKeepsSetupShut() {
+        // Started "today", with a completion dated tomorrow: the clock has gone back.
+        let habit = habit(startedDaysAgo: 0)
+        let ahead = CompletionEvent(habitID: habit.id, dayKey: referenceToday.advanced(by: 1),
+                                    occurredAt: .distantPast, timeZoneIdentifier: "UTC")
+        let history = HabitHistory(habit: habit, events: [ahead], lifecycle: [], today: referenceToday)
+        #expect(history.hasRecordsAfterToday)
+        #expect(!LockInGate.isSettingUp(.morning, histories: [history]))
+    }
+
+    @Test("Nothing is waited on during setup")
+    func nothingWaitedOnInSetup() {
+        let entered = (0..<3).map { _ in makeHistory("") }
+        #expect(LockInGate.waitingOn(in: .morning, histories: entered).isEmpty)
     }
 }

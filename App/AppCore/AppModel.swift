@@ -159,14 +159,10 @@ final class AppModel: RoutineActing {
         LockInGate.isSettingUp(routine, histories: histories)
     }
 
-    /// How many starting habits in `routine` have yet to bed in, when those are what the gate
-    /// is waiting on. `nil` when it is waiting on a single habit.
-    func startingHabitsBeddingIn(_ routine: RoutineSlot) -> Int? {
-        let starting = LockInGate.startingSet(in: routine, histories: histories)
-        guard starting.count > 1,
-              let judged = LockInGate.judged(in: routine, histories: histories),
-              starting.contains(where: { $0.habit.id == judged.habit.id }) else { return nil }
-        return starting.count { !LockInGate.assess($0).isLockedIn }
+    /// The habits the gate is waiting on in `routine`, furthest behind first. More than one
+    /// after a starting set. See `LockInGate.waitingOn`.
+    func waitingOn(_ routine: RoutineSlot) -> [HabitHistory] {
+        LockInGate.waitingOn(in: routine, histories: histories)
     }
 
     /// Whether this device has nothing to show yet: no habits at all, archived or not, and

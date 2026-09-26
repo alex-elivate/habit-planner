@@ -35,13 +35,26 @@ struct RoutineSetupView: View {
     @State private var showingNext = false
     @FocusState private var focused: UUID?
 
+    /// What will be added: typed, trimmed, and each title once, leaving out any the routine
+    /// already has.
     private var titles: [String] {
-        entries.map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var seen = Set(model.habits(in: routine).map { $0.habit.title.lowercased() })
+        return entries
+            .map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
     }
 
     var body: some View {
         Form {
             let existing = model.habits(in: routine)
+            if !model.isSettingUp(routine) {
+                // Habits arrived from another device while this was open, or midnight passed.
+                // Past setup, habits join one at a time, so nothing typed here is added.
+                Section {
+                    Text("This routine already has habits from before today, so new ones join one at a time. Nothing here will be added. Add a habit from the routine instead.")
+                        .foregroundStyle(.secondary)
+                }
+            }
             if !existing.isEmpty {
                 Section("Already in this routine") {
                     ForEach(existing, id: \.habit.id) { Text($0.habit.title) }
@@ -53,7 +66,7 @@ struct RoutineSetupView: View {
                     TextField("Habit", text: $entry.title, prompt: Text(example(for: entry.id)))
                         .focused($focused, equals: entry.id)
                         .submitLabel(.next)
-                        .onSubmit { addEntry() }
+                        .onSubmit { advance(from: entry.id) }
                 }
                 .onDelete { offsets in
                     entries.remove(atOffsets: offsets)
@@ -72,7 +85,7 @@ struct RoutineSetupView: View {
         .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(then == nil ? "Cancel" : "Not now", action: leave)
+                Button(isFirstLaunch ? "Not now" : "Cancel", action: leave)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(then == nil ? "Done" : "Next", action: finish)
@@ -107,6 +120,17 @@ struct RoutineSetupView: View {
         return examples[index % examples.count]
     }
 
+    /// Return moves to the next line, and adds one only from a filled last line, so blank
+    /// lines do not pile up.
+    private func advance(from id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        if index + 1 < entries.count {
+            focused = entries[index + 1].id
+        } else if !entries[index].title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            addEntry()
+        }
+    }
+
     private func addEntry() {
         let entry = Entry()
         entries.append(entry)
@@ -114,7 +138,7 @@ struct RoutineSetupView: View {
     }
 
     private func finish() {
-        let toAdd = titles
+        let toAdd = model.isSettingUp(routine) ? titles : []
         guard !toAdd.isEmpty else {
             // Nothing for this routine. On first launch, carry on to the next.
             if then != nil { showingNext = true } else { leave() }
