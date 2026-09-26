@@ -164,4 +164,21 @@ struct StartingSetTests {
         let entered = (0..<3).map { _ in makeHistory("") }
         #expect(LockInGate.waitingOn(in: .morning, histories: entered).isEmpty)
     }
+
+    @Test("A restored veteran keeps its place when it slips later")
+    func restoredPlaceIsSettledAtRestore() {
+        // Bedded in over days 70 to 11 ago, archived 10 days ago, restored 5 days ago, then
+        // missed the last two days. Today's record fails, but its place was earned before.
+        let veteran = habit(startedDaysAgo: 70)
+        let slipping = HabitHistory(habit: veteran, events: done(veteran, daysAgo: [3, 4, 5] + Array(11...70)),
+                                    lifecycle: [state(veteran, .archived, daysAgo: 10), state(veteran, .active, daysAgo: 5)],
+                                    today: referenceToday)
+        #expect(!LockInGate.assess(slipping).isLockedIn)
+        #expect(LockInGate.hadBeddedInBeforeLeaving(slipping))
+        #expect(LockInGate.gateJoinDay(slipping) == veteran.startedOn)
+
+        let settled = makeHistory(pattern(length: 40, missesAt: []))
+        #expect(LockInGate.judged(in: .morning, histories: [slipping, settled])?.habit.id == settled.habit.id)
+        #expect(LockInGate.canAddHabit(to: .morning, histories: [slipping, settled]) == .open)
+    }
 }

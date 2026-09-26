@@ -52,15 +52,19 @@ public enum LockInGate {
 
     /// Judges a single habit.
     public static func assess(_ history: HabitHistory) -> Assessment {
-        let occurrences = history.settledOccurrences
+        assess(history.habit.id, occurrences: history.settledOccurrences, today: history.today)
+    }
+
+    /// Judges a habit on `occurrences` alone, as if `today` were the day after the last.
+    private static func assess(_ habitID: UUID, occurrences: [ScheduledOccurrence], today: DayKey) -> Assessment {
         let window = occurrences.suffix(requiredOccurrences)
         let rate: Double? = window.isEmpty
             ? nil
             : Double(window.count(where: \.isCompleted)) / Double(window.count)
 
         let doubleMiss = firstDoubleMiss(
-            in: history.settledOccurrences,
-            secondMissOnOrAfter: history.today.advanced(by: -doubleMissWindowDays)
+            in: occurrences,
+            secondMissOnOrAfter: today.advanced(by: -doubleMissWindowDays)
         )
 
         let decision: Decision
@@ -78,7 +82,7 @@ public enum LockInGate {
         }
 
         return Assessment(
-            habitID: history.habit.id,
+            habitID: habitID,
             elapsedOccurrences: occurrences.count,
             requiredOccurrences: requiredOccurrences,
             rate: rate,
@@ -142,10 +146,23 @@ public enum LockInGate {
     /// a habit restored after it had bedded in takes its old place back. It earned that place
     /// before it left, and queueing it as the newest would let it stand in for a habit still
     /// bedding in and open the gate early.
+    ///
+    /// Judged on its record from before it was archived, not on today's, so its place is
+    /// settled at the restore and a rough week later cannot send it to the back of the queue.
     public static func gateJoinDay(_ history: HabitHistory) -> DayKey {
         let joined = history.lifecycle.joinedRoutine(asOf: history.today)
-        guard joined != history.habit.startedOn, assess(history).isLockedIn else { return joined }
+        guard joined != history.habit.startedOn, hadBeddedInBeforeLeaving(history) else { return joined }
         return history.habit.startedOn
+    }
+
+    /// Whether `history` had bedded in when it was last archived. For a habit never archived,
+    /// whether it has bedded in now.
+    public static func hadBeddedInBeforeLeaving(_ history: HabitHistory) -> Bool {
+        let today = history.today
+        guard let left = history.lifecycle.transitions.last(where: { $0.state == .archived && $0.day <= today })?.day
+        else { return assess(history).isLockedIn }
+        let before = history.settledOccurrences.filter { $0.day < left }
+        return assess(history.habit.id, occurrences: before, today: left).isLockedIn
     }
 
     /// The habits the gate judges for `routine`: those sharing the latest `gateJoinDay`.
@@ -211,7 +228,7 @@ public enum LockInGate {
         histories: some Sequence<HabitHistory>
     ) -> Bool {
         let others = histories.filter { $0.habit.id != habit.habit.id }
-        return canAddHabit(to: habit.habit.routine, histories: others).isOpen || assess(habit).isLockedIn
+        return canAddHabit(to: habit.habit.routine, histories: others).isOpen || hadBeddedInBeforeLeaving(habit)
     }
 
     /// Whether changing a habit to `schedule` may be saved.
