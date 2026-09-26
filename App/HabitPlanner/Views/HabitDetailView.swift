@@ -125,7 +125,7 @@ private struct HealthLinkSection: View {
                         .task(id: binding) { name = await health.describe(binding) }
                     if binding.signal == .medication, !HealthService.isKey(binding.externalIdentifier) {
                         // Stored by an older build, whose links could not tell drugs apart.
-                        Text("Linked by an older version, which could mix up medications. Unlink, then link again to be sure it is the right one.")
+                        Text("Linked by an older version, which could mix up medications, so doses are not counted until you relink. Unlink, then link again.")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
@@ -151,6 +151,7 @@ private struct HealthLinkPicker: View {
     let habitID: UUID
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var medications: [HealthService.Medication]?
     @State private var problem: String?
 
@@ -186,6 +187,11 @@ private struct HealthLinkPicker: View {
             if let problem {
                 Section { Text(problem).foregroundStyle(.red) }
             }
+        }
+        // Back from sharing another medication in Health, so the list shows it.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, medications != nil else { return }
+            Task { medications = try? await health.sharedMedications() }
         }
         .navigationTitle("Link to Health")
         .navigationBarTitleDisplayMode(.inline)

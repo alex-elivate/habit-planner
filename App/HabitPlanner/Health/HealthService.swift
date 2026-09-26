@@ -55,7 +55,8 @@ final class HealthService {
     /// out of the query's callback as it is.
     private nonisolated struct SharedMedication: @unchecked Sendable {
         let medication: Medication
-        let concept: HKHealthConceptIdentifier
+        let details: HKMedicationConcept
+        var concept: HKHealthConceptIdentifier { details.identifier }
     }
 
     /// A readable key for a medication: the clinical codes Health attaches to it, or its name
@@ -65,10 +66,33 @@ final class HealthService {
     /// initialiser and shows only its domain, which is "medication" for every drug. Links
     /// stored as its archive showed the same name for different drugs, so the key is built
     /// from what is readable, and the live identifier is looked up by it when needed.
+    ///
+    /// Matched loosely, by `matches(_:_:)`, so a link survives Health refining a drug's codes
+    /// or name.
     nonisolated static func key(for concept: HKMedicationConcept) -> String {
-        let codes = concept.relatedCodings.map { "\($0.system)|\($0.code)" }.sorted()
+        let codes = codings(of: concept).sorted()
         if !codes.isEmpty { return "codes:" + codes.joined(separator: ",") }
-        return "name:\(concept.displayText)|\(concept.generalForm.rawValue)"
+        return "name:\(concept.displayText)"
+    }
+
+    private nonisolated static func codings(of concept: HKMedicationConcept) -> Set<String> {
+        Set(concept.relatedCodings.map { "\($0.system)|\($0.code)" })
+    }
+
+    /// Whether the medication stored as `key` is `concept`: any clinical code in common, or,
+    /// for a medication stored without codes, the same name.
+    nonisolated static func matches(_ key: String, _ concept: HKMedicationConcept) -> Bool {
+        if key.hasPrefix("codes:") {
+            let stored = Set(key.dropFirst("codes:".count).split(separator: ",").map(String.init))
+            return !stored.isDisjoint(with: codings(of: concept))
+        }
+        if key.hasPrefix("name:") {
+            let name = String(key.dropFirst("name:".count))
+            // The first build of these keys added "|" and the drug's form after the name.
+            let named = { (text: String) in concept.displayText.localizedCaseInsensitiveCompare(text) == .orderedSame }
+            return named(name) || (name.hasPrefix(concept.displayText + "|") && named(String(name.prefix(concept.displayText.count))))
+        }
+        return false
     }
 
     /// Whether `stored` is a key from `key(for:)`, rather than an archive from an older build.
@@ -94,16 +118,18 @@ final class HealthService {
         try await shared().map(\.medication)
     }
 
-    /// The shared medication a binding points at, with its live identifier.
+    /// The shared medication a binding points at, or `nil` if none is shared that matches.
     ///
-    /// A binding from an older build holds an archived identifier, matched by equality rather
-    /// than by its bytes, and used as it is if the medication is no longer shared.
+    /// An exact key first, then a loose match. A binding from an older build holds an archived
+    /// identifier, matched by equality. That is for showing its name only: see `signalInstants`.
     private func sharedMedication(for stored: String?) async throws -> SharedMedication? {
         let all = try await shared()
-        if Self.isKey(stored) { return all.first { $0.medication.id == stored } }
+        guard let stored else { return nil }
+        if Self.isKey(stored) {
+            return all.first { $0.medication.id == stored } ?? all.first { Self.matches(stored, $0.details) }
+        }
         guard let archived = Self.unarchive(stored) else { return nil }
         return all.first { $0.concept == archived }
-            ?? SharedMedication(medication: Medication(id: stored ?? "", name: "Medication"), concept: archived)
     }
 
     private func shared() async throws -> [SharedMedication] {
@@ -142,7 +168,7 @@ final class HealthService {
                 found.append(SharedMedication(
                     medication: Medication(id: HealthService.key(for: concept),
                                            name: medication.nickname ?? concept.displayText),
-                    concept: concept.identifier))
+                    details: concept))
             }
             if done {
                 self.continuation = nil
@@ -159,9 +185,13 @@ final class HealthService {
 
     // MARK: - Signals
 
+    /// Thrown rather than answering with no doses, because the backfill takes an answer as
+    /// having checked those days and never looks at them again.
     enum SignalError: Error {
         case unavailable
         case unreadableBinding
+        /// The linked medication is not shared with the app now. Sharing it again resumes.
+        case notShared
     }
 
     /// Every instant in `interval` at which Health saw this binding's signal.
@@ -187,11 +217,11 @@ final class HealthService {
             return workouts.map(\.startDate)
 
         case .medication:
-            // An unshared medication is not an unreadable binding: the person may share it
-            // again, and until then Health has nothing to say about it.
+            // A link from an older build may point at the wrong drug, so it counts nothing until
+            // it is relinked. Its days stay unchecked rather than filled from the wrong doses.
+            guard Self.isKey(binding.externalIdentifier) else { throw SignalError.unreadableBinding }
             guard let concept = try await sharedMedication(for: binding.externalIdentifier)?.concept else {
-                if Self.isKey(binding.externalIdentifier) { return [] }
-                throw SignalError.unreadableBinding
+                throw SignalError.notShared
             }
             let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
                 during,
@@ -212,8 +242,12 @@ final class HealthService {
         case .workout:
             return Self.workoutName(for: binding.externalIdentifier)
         case .medication:
-            return (try? await sharedMedication(for: binding.externalIdentifier))?.medication.name
-                ?? "A medication no longer shared"
+            do {
+                return try await sharedMedication(for: binding.externalIdentifier)?.medication.name
+                    ?? "A medication no longer shared"
+            } catch {
+                return "Health could not be read"
+            }
         }
     }
 }
