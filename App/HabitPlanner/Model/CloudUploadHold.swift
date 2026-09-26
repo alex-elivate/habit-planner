@@ -11,37 +11,46 @@ import UIKit
 /// chance to send it. The latest, because one upload started after an earlier write may not
 /// carry a later one.
 ///
-/// `begin()` before a write, so the app stays up while it happens, and `finish(saved:)` once it
+/// `begin()` before a write returns a token, and `finish(_:saved:)` hands it back once the write
 /// is over. The hold ends when no write is still under way and an upload that started after the
-/// latest save has finished. An upload finishing mid-write would otherwise release the write. Capped, because iOS allows about
-/// half a minute and ends the app if it overstays.
+/// latest save has finished. A token from a write that was never counted, or from a hold that
+/// has since ended, is ignored, so a stray finish cannot release someone else's write.
 ///
-/// Nothing is held while the app is on screen, where it keeps running anyway.
+/// Capped, because iOS allows about half a minute and ends the app if it overstays. Nothing is
+/// held while the app is on screen, where it keeps running anyway.
 @MainActor
 final class CloudUploadHold {
     static let shared = CloudUploadHold()
 
+    /// One write's place in one hold.
+    struct Token {
+        fileprivate let hold: Int
+    }
+
     private var task: UIBackgroundTaskIdentifier = .invalid
     private var observer: (any NSObjectProtocol)?
     private var deadline: Task<Void, Never>?
-    /// When the latest write saved. Only an upload that started after it can carry it.
-    private var since: Date?
-    /// Writes begun and not yet finished.
+    /// Counts holds, so a token outlives the hold it came from harmlessly.
+    private var generation = 0
+    /// Writes begun in this hold and not yet finished.
     private var inFlight = 0
+    /// When the latest write in this hold saved. Only an upload that started after it can carry it.
+    private var savedAt: Date?
+    /// When the latest successful upload in this hold started, in case it finished before the
+    /// last write was handed back.
+    private var uploadStartedAt: Date?
 
     private static let limit: Duration = .seconds(25)
     private static let log = Logger(subsystem: "org.trusler.habitplanner", category: "upload")
 
-    /// Call just before a background write. Several writes in a row share one hold.
-    func begin() {
-        guard UIApplication.shared.applicationState != .active else { return }
-        inFlight += 1
+    /// Call just before a background write. `nil` while the app is on screen.
+    func begin() -> Token? {
+        guard UIApplication.shared.applicationState != .active else { return nil }
         if task == .invalid {
+            generation += 1
             task = UIApplication.shared.beginBackgroundTask(withName: "iCloud upload") { [weak self] in
                 MainActor.assumeIsolated { self?.end(reason: "time ran out") }
             }
-        }
-        if observer == nil {
             observer = NotificationCenter.default.addObserver(
                 forName: NSPersistentCloudKitContainer.eventChangedNotification, object: nil, queue: .main
             ) { [weak self] note in
@@ -49,29 +58,37 @@ final class CloudUploadHold {
                         as? NSPersistentCloudKitContainer.Event,
                       event.type == .export, event.endDate != nil, event.succeeded else { return }
                 let started = event.startDate
-                MainActor.assumeIsolated { self?.exportFinished(startedAt: started) }
+                MainActor.assumeIsolated { self?.uploaded(startedAt: started) }
             }
         }
+        inFlight += 1
         deadline?.cancel()
         deadline = Task { [weak self] in
             try? await Task.sleep(for: Self.limit)
             guard !Task.isCancelled else { return }
             self?.end(reason: "no upload seen")
         }
+        return Token(hold: generation)
     }
 
-    /// Call once a write begun with `begin()` is over. `saved` is whether it changed anything,
-    /// since a write that changed nothing gives iCloud nothing to upload.
-    func finish(saved: Bool) {
-        guard task != .invalid, inFlight > 0 else { return }
+    /// Call once the write `token` was given for is over. `saved` is whether it changed
+    /// anything, since a write that changed nothing gives iCloud nothing to upload.
+    func finish(_ token: Token?, saved: Bool) {
+        guard let token, token.hold == generation, task != .invalid, inFlight > 0 else { return }
         inFlight -= 1
-        if saved { since = .now }
-        if inFlight == 0, since == nil { end(reason: "nothing to upload") }
+        if saved { savedAt = .now }
+        endIfDone()
     }
 
-    private func exportFinished(startedAt started: Date) {
-        guard inFlight == 0, let since, started >= since else { return }
-        end(reason: "uploaded")
+    private func uploaded(startedAt started: Date) {
+        uploadStartedAt = max(uploadStartedAt ?? started, started)
+        endIfDone()
+    }
+
+    private func endIfDone() {
+        guard inFlight == 0 else { return }
+        guard let savedAt else { return end(reason: "nothing to upload") }
+        if let uploadStartedAt, uploadStartedAt >= savedAt { end(reason: "uploaded") }
     }
 
     private func end(reason: String) {
@@ -81,8 +98,9 @@ final class CloudUploadHold {
         deadline = nil
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
-        since = nil
         inFlight = 0
+        savedAt = nil
+        uploadStartedAt = nil
         UIApplication.shared.endBackgroundTask(task)
         task = .invalid
     }

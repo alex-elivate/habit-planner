@@ -70,14 +70,14 @@ final class Launch {
             let held = RoutineActions(
                 start: actions.start,
                 completeCurrent: { routine in
-                    await CloudUploadHold.shared.begin()
+                    let token = await CloudUploadHold.shared.begin()
                     do {
                         let outcome = try await actions.completeCurrent(routine)
                         let saved = if case .completed = outcome { true } else { false }
-                        await CloudUploadHold.shared.finish(saved: saved)
+                        await CloudUploadHold.shared.finish(token, saved: saved)
                         return outcome
                     } catch {
-                        await CloudUploadHold.shared.finish(saved: false)
+                        await CloudUploadHold.shared.finish(token, saved: false)
                         throw error
                     }
                 },

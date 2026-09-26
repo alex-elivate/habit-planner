@@ -131,10 +131,9 @@ final class PhoneBridge: NSObject {
         for file in files where file.pathExtension == "json" {
             // Reports arrive with the phone in a pocket and the app in the background. Held
             // open so the ticks reach iCloud, and the Mac, without the app being opened.
-            let hold = CloudUploadHold.shared
-            hold.begin()
+            let token = CloudUploadHold.shared.begin()
             var saved = false
-            defer { hold.finish(saved: saved) }
+            defer { CloudUploadHold.shared.finish(token, saved: saved) }
             do {
                 let report = try BridgeCodec.decodeReport(try Data(contentsOf: file))
                 let result = try await model.store.merge(report)
@@ -227,11 +226,11 @@ extension PhoneBridge: WCSessionDelegate {
         Task { @MainActor in
             // Begun here so the app is held from arrival, and finished once every report has
             // merged. The merge holds each write of its own.
-            CloudUploadHold.shared.begin()
+            let token = CloudUploadHold.shared.begin()
             holding.signal()
             mergePendingReports()
             await merging?.value
-            CloudUploadHold.shared.finish(saved: false)
+            CloudUploadHold.shared.finish(token, saved: false)
         }
     }
 
