@@ -155,6 +155,7 @@ struct PlannedHabitRow: View {
         .accessibilityIdentifier("plan.\(routine.rawValue)")
         .sheet(isPresented: $editing) {
             NavigationStack { PlanHabitView(routine: routine, title: plan?.title ?? "") }
+                .sheetMinimumSize(width: 440, height: 300)
         }
     }
 }

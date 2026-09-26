@@ -8,4 +8,7 @@ extension View {
     func inlineNavigationTitle() -> some View {
         navigationBarTitleDisplayMode(.inline)
     }
+
+    /// Nothing on the phone, where a sheet fills the screen. See the Mac's version.
+    func sheetMinimumSize(width: CGFloat, height: CGFloat) -> some View { self }
 }
