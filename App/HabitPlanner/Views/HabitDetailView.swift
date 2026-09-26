@@ -191,7 +191,8 @@ private struct HealthLinkPicker: View {
         // Back from sharing another medication in Health, so the list shows it.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, medications != nil else { return }
-            Task { medications = try? await health.sharedMedications() }
+            // A failed reload keeps the list already shown.
+            Task { if let fresh = try? await health.sharedMedications() { medications = fresh } }
         }
         .navigationTitle("Link to Health")
         .navigationBarTitleDisplayMode(.inline)

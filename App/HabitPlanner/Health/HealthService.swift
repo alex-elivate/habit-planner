@@ -67,32 +67,42 @@ final class HealthService {
     /// stored as its archive showed the same name for different drugs, so the key is built
     /// from what is readable, and the live identifier is looked up by it when needed.
     ///
-    /// Matched loosely, by `matches(_:_:)`, so a link survives Health refining a drug's codes
+    /// Matched loosely, by `closeness(of:to:)`, so a link survives Health refining a drug's codes
     /// or name.
     nonisolated static func key(for concept: HKMedicationConcept) -> String {
         let codes = codings(of: concept).sorted()
         if !codes.isEmpty { return "codes:" + codes.joined(separator: ",") }
-        return "name:\(concept.displayText)"
+        return "name:\(concept.displayText)|\(concept.generalForm.rawValue)"
     }
 
     private nonisolated static func codings(of concept: HKMedicationConcept) -> Set<String> {
         Set(concept.relatedCodings.map { "\($0.system)|\($0.code)" })
     }
 
-    /// Whether the medication stored as `key` is `concept`: any clinical code in common, or,
-    /// for a medication stored without codes, the same name.
-    nonisolated static func matches(_ key: String, _ concept: HKMedicationConcept) -> Bool {
+    /// How closely the medication stored as `key` matches `concept`, or 0 for not at all.
+    ///
+    /// For a coded key, the number of codes in common. Related drugs can share a code, such as
+    /// one for an ingredient, so the caller takes only a single best match. For a named key,
+    /// 1 when the name and, where stored, the form are the same. The form is after the last
+    /// "|", and a key from a build that left it out is matched on the name alone.
+    nonisolated static func closeness(of key: String, to concept: HKMedicationConcept) -> Int {
         if key.hasPrefix("codes:") {
             let stored = Set(key.dropFirst("codes:".count).split(separator: ",").map(String.init))
-            return !stored.isDisjoint(with: codings(of: concept))
+            return stored.intersection(codings(of: concept)).count
         }
-        if key.hasPrefix("name:") {
-            let name = String(key.dropFirst("name:".count))
-            // The first build of these keys added "|" and the drug's form after the name.
-            let named = { (text: String) in concept.displayText.localizedCaseInsensitiveCompare(text) == .orderedSame }
-            return named(name) || (name.hasPrefix(concept.displayText + "|") && named(String(name.prefix(concept.displayText.count))))
+        guard key.hasPrefix("name:") else { return 0 }
+        let rest = key.dropFirst("name:".count)
+        let name: Substring, form: Substring?
+        if let bar = rest.lastIndex(of: "|") {
+            name = rest[..<bar]
+            form = rest[rest.index(after: bar)...]
+        } else {
+            name = rest
+            form = nil
         }
-        return false
+        guard concept.displayText.localizedCaseInsensitiveCompare(String(name)) == .orderedSame else { return 0 }
+        if let form, form != concept.generalForm.rawValue { return 0 }
+        return 1
     }
 
     /// Whether `stored` is a key from `key(for:)`, rather than an archive from an older build.
@@ -121,15 +131,19 @@ final class HealthService {
     /// The shared medication a binding points at, or `nil` if none is shared that matches.
     ///
     /// An exact key first, then a loose match. A binding from an older build holds an archived
-    /// identifier, matched by equality. That is for showing its name only: see `signalInstants`.
+    /// identifier, which is never matched: that match is what mixed drugs up.
     private func sharedMedication(for stored: String?) async throws -> SharedMedication? {
         let all = try await shared()
         guard let stored else { return nil }
         if Self.isKey(stored) {
-            return all.first { $0.medication.id == stored } ?? all.first { Self.matches(stored, $0.details) }
+            if let exact = all.first(where: { $0.medication.id == stored }) { return exact }
+            // Only a single best match. Two drugs matching equally well is a guess, and a guess
+            // here counts one drug's doses for another.
+            let scored = all.map { ($0, Self.closeness(of: stored, to: $0.details)) }.filter { $0.1 > 0 }
+            guard let best = scored.map(\.1).max(), scored.count(where: { $0.1 == best }) == 1 else { return nil }
+            return scored.first { $0.1 == best }?.0
         }
-        guard let archived = Self.unarchive(stored) else { return nil }
-        return all.first { $0.concept == archived }
+        return nil
     }
 
     private func shared() async throws -> [SharedMedication] {
@@ -175,12 +189,6 @@ final class HealthService {
                 continuation.resume(returning: found)
             }
         }
-    }
-
-    /// Reads a link stored by a build before `key(for:)`. Nothing writes this form any more.
-    static func unarchive(_ string: String?) -> HKHealthConceptIdentifier? {
-        guard let string, let data = Data(base64Encoded: string) else { return nil }
-        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKHealthConceptIdentifier.self, from: data)
     }
 
     // MARK: - Signals
@@ -242,6 +250,7 @@ final class HealthService {
         case .workout:
             return Self.workoutName(for: binding.externalIdentifier)
         case .medication:
+            guard Self.isKey(binding.externalIdentifier) else { return "Relink needed" }
             do {
                 return try await sharedMedication(for: binding.externalIdentifier)?.medication.name
                     ?? "A medication no longer shared"
