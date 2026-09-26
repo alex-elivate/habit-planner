@@ -62,9 +62,28 @@ final class Launch {
             let container = try mode.makeContainer()
             let model = AppModel(store: HabitStoreActor(modelContainer: container), mode: mode)
             state = .ready(model)
-            AppDependencyManager.shared.add(dependency: RoutineActions(model: model) { routine in
+            let actions = RoutineActions(model: model) { routine in
                 Router.shared.requestedRoutine = routine
-            })
+            }
+            // A tick from the widget or Siri runs with the app in the background. Held open
+            // until iCloud has it, so it reaches the Mac without the app being opened.
+            let held = RoutineActions(
+                start: actions.start,
+                completeCurrent: { routine in
+                    let token = await CloudUploadHold.shared.begin()
+                    do {
+                        let outcome = try await actions.completeCurrent(routine)
+                        let saved = if case .completed = outcome { true } else { false }
+                        await CloudUploadHold.shared.finish(token, saved: saved)
+                        return outcome
+                    } catch {
+                        await CloudUploadHold.shared.finish(token, saved: false)
+                        throw error
+                    }
+                },
+                glance: actions.glance
+            )
+            AppDependencyManager.shared.add(dependency: held)
             if mode.bridges {
                 let bridge = PhoneBridge(model: model)
                 bridge.start()

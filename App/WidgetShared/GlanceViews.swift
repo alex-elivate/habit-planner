@@ -102,6 +102,9 @@ private struct NextHabitView: View {
                             .font(.headline)
                             .lineLimit(3)
                             .minimumScaleFactor(0.8)
+                            // Dims the moment Done is tapped, until the app's new timeline
+                            // arrives. The tick itself takes the app a few seconds to write.
+                            .invalidatableContent()
                     } else {
                         Text(routine.doneText).font(.headline)
                     }
@@ -134,6 +137,7 @@ private struct NextHabitView: View {
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+            .invalidatableContent()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

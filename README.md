@@ -11,9 +11,11 @@ Most habit apps show a checklist and let you pick items in any order. That works
 ## Status
 
 Phases 3 to 7 are built: the iOS app, the watchOS app and its bridge, the widgets and
-complications, Siri and Shortcuts, and the Mac app, with 259 package tests. The iPhone and watch
-apps are tested on simulators. The Mac app has been run in its demo mode only. None of them has run on a physical
-device yet, and the CloudKit schema has not been primed or promoted. See
+complications, Siri and Shortcuts, and the Mac app, with 260 package tests. The iPhone app and
+the Mac app run from development builds on real devices. Sync between them works in the
+development environment, Siri works on both, and medication links work on the phone. The watch
+app has run on simulators only: Xcode 27 has not yet discovered a real watch to register it.
+The CloudKit schema has not been promoted, so there is no TestFlight build yet. See
 [Before the first TestFlight build](#before-the-first-testflight-build).
 
 ## Platforms
@@ -301,6 +303,24 @@ day somebody un-ticked stays un-ticked.
 
 The link itself, which for a medication names a drug, is stored only in the local health store.
 
+#### Linking a medication
+
+Health shares medications one at a time, and it asks which ones only the first time the app
+requests them. A medication left out then does not appear in the app's list until it is shared
+from Health. To link your medications:
+
+1. Add each medication in the Health app, under Medications.
+2. In Habit Planner, open a habit, tap **Link to Apple Health**, then **Choose medications**.
+   Health asks which medications to share. Turn on every one you want to link, not only the one
+   for this habit.
+3. Pick this habit's medication from the list.
+4. For a medication you did not share the first time, tap **Share another medication**, or open
+   Health, tap your profile picture, then **Apps**, then **Habit Planner**, and turn it on. Come
+   back to Habit Planner and it appears in the list.
+
+A dose counts only when it is logged as taken in Health. A link from a build before September
+2026 says "Relink needed" and counts nothing until you unlink it and link it again.
+
 ## The watch
 
 `App/HabitPlannerWatch/` is a watchOS app embedded in the iOS app. It runs routines and nothing
@@ -433,6 +453,16 @@ unqualified "mark my habit done" at 7:30 must not tick tonight's habit.
 Start Routine hands the routine to the app's router, the same path a tapped reminder takes. It
 does not open the widget's link, because only the iPhone app registers that URL scheme and a
 watch app cannot register one.
+
+**Say "in Habit Planner".** Siri passes a request to an app only when the phrase names the
+app, and Apple requires every built-in phrase to include it. "Start my morning routine" on its
+own never reaches Habit Planner, and Siri answers "we had a problem" without the app being
+involved. For a shorter phrase, make a shortcut in the Shortcuts app with Habit Planner's
+**Start Routine** action set to a routine, and give it the name you want to say, such as "Start
+my morning routine". Siri runs a shortcut when you say its name.
+
+With a Mac and an iPhone in the same room, both may answer the same request. Siri picks which
+device responds, and the app has no part in that.
 
 A runner left open on screen follows a tick made elsewhere. When Siri or the widget ticks the
 habit it is showing, it plans again from the store and moves on.

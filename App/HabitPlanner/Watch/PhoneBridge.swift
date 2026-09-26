@@ -129,10 +129,16 @@ final class PhoneBridge: NSObject {
 
         var merged = false
         for file in files where file.pathExtension == "json" {
+            // Reports arrive with the phone in a pocket and the app in the background. Held
+            // open so the ticks reach iCloud, and the Mac, without the app being opened.
+            let token = CloudUploadHold.shared.begin()
+            var saved = false
+            defer { CloudUploadHold.shared.finish(token, saved: saved) }
             do {
                 let report = try BridgeCodec.decodeReport(try Data(contentsOf: file))
                 let result = try await model.store.merge(report)
                 Self.log.info("Report merged: \(report.completions.count) completions, \(result.written) rows written")
+                saved = result.written > 0
                 try FileManager.default.removeItem(at: file)
                 merged = true
                 problem = nil
@@ -209,7 +215,23 @@ extension PhoneBridge: WCSessionDelegate {
             Task { @MainActor in problem = "Could not keep what your watch sent. \(error.localizedDescription)" }
             return
         }
-        Task { @MainActor in mergePendingReports() }
+        // iOS may suspend the app as soon as this returns, before the hops to the main actor
+        // reach the upload hold. A system activity, which can be started from this thread,
+        // keeps it up until the hold has begun.
+        let holding = DispatchSemaphore(value: 0)
+        ProcessInfo.processInfo.performExpiringActivity(withReason: "Merge a report from the watch") { expired in
+            guard !expired else { return }
+            _ = holding.wait(timeout: .now() + 10)
+        }
+        Task { @MainActor in
+            // Begun here so the app is held from arrival, and finished once every report has
+            // merged. The merge holds each write of its own.
+            let token = CloudUploadHold.shared.begin()
+            holding.signal()
+            mergePendingReports()
+            await merging?.value
+            CloudUploadHold.shared.finish(token, saved: false)
+        }
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
