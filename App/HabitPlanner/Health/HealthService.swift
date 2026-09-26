@@ -88,7 +88,10 @@ final class HealthService {
     nonisolated static func closeness(of key: String, to concept: HKMedicationConcept) -> Int {
         if key.hasPrefix("codes:") {
             let stored = Set(key.dropFirst("codes:".count).split(separator: ",").map(String.init))
-            return stored.intersection(codings(of: concept)).count
+            let shared = stored.intersection(codings(of: concept)).count
+            // Most of the stored codes, not just one. A single shared code can be the
+            // ingredient, which another strength of the same drug also carries.
+            return shared * 2 > stored.count ? shared : 0
         }
         guard key.hasPrefix("name:") else { return 0 }
         let rest = key.dropFirst("name:".count)
@@ -140,7 +143,8 @@ final class HealthService {
             // Only a single best match. Two drugs matching equally well is a guess, and a guess
             // here counts one drug's doses for another.
             let scored = all.map { ($0, Self.closeness(of: stored, to: $0.details)) }.filter { $0.1 > 0 }
-            guard let best = scored.map(\.1).max(), scored.count(where: { $0.1 == best }) == 1 else { return nil }
+            guard let best = scored.map(\.1).max() else { return nil }
+            guard scored.count(where: { $0.1 == best }) == 1 else { throw SignalError.ambiguous }
             return scored.first { $0.1 == best }?.0
         }
         return nil
@@ -200,6 +204,8 @@ final class HealthService {
         case unreadableBinding
         /// The linked medication is not shared with the app now. Sharing it again resumes.
         case notShared
+        /// More than one shared medication fits the link equally well. Relinking settles it.
+        case ambiguous
     }
 
     /// Every instant in `interval` at which Health saw this binding's signal.
@@ -254,6 +260,8 @@ final class HealthService {
             do {
                 return try await sharedMedication(for: binding.externalIdentifier)?.medication.name
                     ?? "A medication no longer shared"
+            } catch SignalError.ambiguous {
+                return "Relink needed"
             } catch {
                 return "Health could not be read"
             }
