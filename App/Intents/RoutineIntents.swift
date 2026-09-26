@@ -115,6 +115,9 @@ struct CompleteEveningStepIntent: AppIntent {
 // watchOS has no such protocol, and a complication has no buttons to need it.
 extension CompleteMorningStepIntent: LiveActivityIntent {}
 extension CompleteEveningStepIntent: LiveActivityIntent {}
+// Siri's version too. It is compiled into the widget extension along with the rest of this
+// folder, and nothing registers `RoutineActions` there.
+extension CompleteCurrentHabitIntent: LiveActivityIntent {}
 #endif
 
 /// Answers what comes next, without opening anything.
