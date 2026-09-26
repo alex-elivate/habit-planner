@@ -44,17 +44,46 @@ final class HealthService {
     // MARK: - Medications
 
     nonisolated struct Medication: Identifiable, Hashable, Sendable {
-        /// The archived concept identifier. Opaque, and never shown.
+        /// What a binding stores to find this medication again. See `key(for:)`.
         let id: String
         let name: String
+    }
+
+    /// A medication and HealthKit's live identifier for it, which dose queries need.
+    ///
+    /// The identifier is not `Sendable`, but it is immutable and only read, so it is carried
+    /// out of the query's callback as it is.
+    private nonisolated struct SharedMedication: @unchecked Sendable {
+        let medication: Medication
+        let concept: HKHealthConceptIdentifier
+    }
+
+    /// A readable key for a medication: the clinical codes Health attaches to it, or its name
+    /// and form when it has none.
+    ///
+    /// Stored in place of the concept identifier itself. That identifier has no public
+    /// initialiser and shows only its domain, which is "medication" for every drug. Links
+    /// stored as its archive showed the same name for different drugs, so the key is built
+    /// from what is readable, and the live identifier is looked up by it when needed.
+    nonisolated static func key(for concept: HKMedicationConcept) -> String {
+        let codes = concept.relatedCodings.map { "\($0.system)|\($0.code)" }.sorted()
+        if !codes.isEmpty { return "codes:" + codes.joined(separator: ",") }
+        return "name:\(concept.displayText)|\(concept.generalForm.rawValue)"
+    }
+
+    /// Whether `stored` is a key from `key(for:)`, rather than an archive from an older build.
+    nonisolated static func isKey(_ stored: String?) -> Bool {
+        stored?.hasPrefix("codes:") == true || stored?.hasPrefix("name:") == true
     }
 
     /// Asks which medications the person will share, then lists the ones they chose.
     ///
     /// Medications use per-object authorisation. Passing the medication type to the ordinary
-    /// `requestAuthorization` throws, which is sometimes misread as a hidden entitlement. The
-    /// prompt always appears, even if access was granted before, because the person picks
-    /// medications individually each time.
+    /// `requestAuthorization` throws, which is sometimes misread as a hidden entitlement.
+    ///
+    /// The prompt appears only the first time. Found on a device: after that the call returns
+    /// at once, and a medication not shared then can only be shared from Health itself. The
+    /// picker says so and offers to open Health.
     func requestMedicationAccess() async throws -> [Medication] {
         try await store.requestPerObjectReadAuthorization(for: HKObjectType.userAnnotatedMedicationType(),
                                                           predicate: nil)
@@ -62,6 +91,22 @@ final class HealthService {
     }
 
     func sharedMedications() async throws -> [Medication] {
+        try await shared().map(\.medication)
+    }
+
+    /// The shared medication a binding points at, with its live identifier.
+    ///
+    /// A binding from an older build holds an archived identifier, matched by equality rather
+    /// than by its bytes, and used as it is if the medication is no longer shared.
+    private func sharedMedication(for stored: String?) async throws -> SharedMedication? {
+        let all = try await shared()
+        if Self.isKey(stored) { return all.first { $0.medication.id == stored } }
+        guard let archived = Self.unarchive(stored) else { return nil }
+        return all.first { $0.concept == archived }
+            ?? SharedMedication(medication: Medication(id: stored ?? "", name: "Medication"), concept: archived)
+    }
+
+    private func shared() async throws -> [SharedMedication] {
         let collector = MedicationCollector()
         return try await withCheckedThrowingContinuation { continuation in
             collector.continuation = continuation
@@ -80,8 +125,8 @@ final class HealthService {
     /// first terminal callback wins and anything after it is ignored.
     private nonisolated final class MedicationCollector: @unchecked Sendable {
         private let lock = NSLock()
-        private var found: [Medication] = []
-        var continuation: CheckedContinuation<[Medication], any Error>?
+        private var found: [SharedMedication] = []
+        var continuation: CheckedContinuation<[SharedMedication], any Error>?
 
         func receive(_ medication: HKUserAnnotatedMedication?, done: Bool, error: (any Error)?) {
             lock.lock()
@@ -92,9 +137,12 @@ final class HealthService {
                 continuation.resume(throwing: error)
                 return
             }
-            if let medication, !medication.isArchived,
-               let id = HealthService.archive(medication.medication.identifier) {
-                found.append(Medication(id: id, name: medication.nickname ?? medication.medication.displayText))
+            if let medication, !medication.isArchived {
+                let concept = medication.medication
+                found.append(SharedMedication(
+                    medication: Medication(id: HealthService.key(for: concept),
+                                           name: medication.nickname ?? concept.displayText),
+                    concept: concept.identifier))
             }
             if done {
                 self.continuation = nil
@@ -103,11 +151,7 @@ final class HealthService {
         }
     }
 
-    nonisolated static func archive(_ identifier: HKHealthConceptIdentifier) -> String? {
-        try? NSKeyedArchiver.archivedData(withRootObject: identifier, requiringSecureCoding: true)
-            .base64EncodedString()
-    }
-
+    /// Reads a link stored by a build before `key(for:)`. Nothing writes this form any more.
     static func unarchive(_ string: String?) -> HKHealthConceptIdentifier? {
         guard let string, let data = Data(base64Encoded: string) else { return nil }
         return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKHealthConceptIdentifier.self, from: data)
@@ -143,7 +187,10 @@ final class HealthService {
             return workouts.map(\.startDate)
 
         case .medication:
-            guard let concept = Self.unarchive(binding.externalIdentifier) else {
+            // An unshared medication is not an unreadable binding: the person may share it
+            // again, and until then Health has nothing to say about it.
+            guard let concept = try await sharedMedication(for: binding.externalIdentifier)?.concept else {
+                if Self.isKey(binding.externalIdentifier) { return [] }
                 throw SignalError.unreadableBinding
             }
             let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
@@ -165,8 +212,8 @@ final class HealthService {
         case .workout:
             return Self.workoutName(for: binding.externalIdentifier)
         case .medication:
-            let medications = (try? await sharedMedications()) ?? []
-            return medications.first { $0.id == binding.externalIdentifier }?.name ?? "Medication"
+            return (try? await sharedMedication(for: binding.externalIdentifier))?.medication.name
+                ?? "A medication no longer shared"
         }
     }
 }
