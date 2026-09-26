@@ -9,7 +9,16 @@ import WatchKit
 @main
 struct HabitPlannerWatchApp: App {
     @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var delegate
-    @State private var launch = WatchLaunch()
+    @State private var launch: WatchLaunch
+
+    /// Opens the store and registers what the intents depend on here, not on first use.
+    ///
+    /// `@State` builds an `@Observable` value lazily, the first time a scene draws. Siri and
+    /// the widget's Done button launch the app in the background with no scene, so a lazy
+    /// launch never ran, and the intent failed to find its `RoutineActions`.
+    init() {
+        _launch = State(initialValue: WatchLaunch())
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -447,10 +447,21 @@ the runner stays skipped. The sequence is the product, so Shortcuts gets no way 
 
 By default, a widget button's intent runs in the widget extension, and that extension only ever
 reads the store. Apple documents that an intent conforming to `LiveActivityIntent` runs in the
-app's process instead. `CompleteCurrentHabitIntent` conforms for that routing alone, since
-there is no Live Activity. So a tick from the widget goes through the app's own store, which is
-the only one that syncs, and no extension ever opens a writable copy. The protocol does not
-exist on watchOS, and a complication has no buttons that would need it.
+app's process instead. The widget's Done intents conform for that routing alone, since there
+is no Live Activity. So a tick from the widget goes through the app's own store, which is the
+only one that syncs, and no extension ever opens a writable copy. The protocol does not exist on
+watchOS, and a complication has no buttons that would need it.
+
+Two things about that route were found on the iOS 26.5 simulator:
+
+- **The widget cannot pass a parameter.** The extension fails to read its own App Intents
+  metadata, and a routine set on the intent there arrives in the app as nil. So each routine
+  has its own Done intent with no parameters, `CompleteMorningStepIntent` and
+  `CompleteEveningStepIntent`, hidden from Shortcuts. Siri keeps `CompleteCurrentHabitIntent`.
+- **The app launches with no scene.** Each app creates its launch object, which registers the
+  intents' `RoutineActions`, in its `init`. Left as a `@State` default, SwiftUI builds an
+  `@Observable` value lazily when a scene first draws, and a background launch for an intent
+  never draws one.
 
 ### Intents write the way the runner does
 
