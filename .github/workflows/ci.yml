@@ -38,7 +38,7 @@ jobs:
         run: swift test
 
   app:
-    name: iOS and watch apps
+    name: iOS, watch and Mac apps
     runs-on: macos-latest
     defaults:
       run:
@@ -66,6 +66,16 @@ jobs:
             -project HabitPlanner.xcodeproj \
             -scheme HabitPlannerWatch \
             -destination 'generic/platform=watchOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build the Mac app
+        # Built, not tested. Mac UI tests need someone at the machine to approve automation
+        # mode, which a hosted runner cannot do.
+        run: |
+          xcodebuild build \
+            -project HabitPlanner.xcodeproj \
+            -scheme HabitPlannerMac \
+            -destination 'generic/platform=macOS' \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Pick a simulator

@@ -25,7 +25,7 @@ struct GlanceView: View {
     @ViewBuilder private func content(_ glance: Glance) -> some View {
         let featured = glance.routine(entry.featured)
         switch family {
-        #if os(iOS)
+        #if os(iOS) || os(macOS)
         case .systemSmall:
             NextHabitView(routine: featured)
                 .widgetURL(WidgetLink.url(for: featured.routine))

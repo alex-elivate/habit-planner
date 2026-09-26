@@ -26,6 +26,8 @@ struct GlanceWidget: Widget {
     private static var families: [WidgetFamily] {
         #if os(watchOS)
         [.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner]
+        #elseif os(macOS)
+        [.systemSmall, .systemMedium, .systemLarge]
         #else
         [.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular, .accessoryInline]
         #endif
