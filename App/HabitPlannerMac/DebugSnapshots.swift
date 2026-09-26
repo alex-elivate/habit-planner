@@ -18,6 +18,7 @@ final class SnapshotDriver {
     var page: MacRootView.Page?
     var path: [UUID] = []
     var running: RoutineSlot?
+    var adding = false
 
     func run(model: AppModel) async {
         let directory = FileManager.default.temporaryDirectory.appending(path: "Snapshots")
@@ -39,6 +40,11 @@ final class SnapshotDriver {
         running = .morning
         await snap("2-runner", in: directory)
         running = nil
+        try? await Task.sleep(for: .seconds(1))
+
+        adding = true
+        await snap("2-editor", in: directory)
+        adding = false
         try? await Task.sleep(for: .seconds(1))
 
         page = .lockIn

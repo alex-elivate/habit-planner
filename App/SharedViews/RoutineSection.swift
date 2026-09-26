@@ -192,6 +192,9 @@ struct PlanHabitView: View {
                 }
             }
         }
+        // Already the phone's style. On the Mac the default lays sections out bare, with no
+        // room for footers or long labels.
+        .formStyle(.grouped)
         .navigationTitle("Next habit")
         .inlineNavigationTitle()
         .toolbar {

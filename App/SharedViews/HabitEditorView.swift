@@ -50,6 +50,9 @@ struct HabitEditorView: View {
                 Section { Text(refusal).foregroundStyle(.red) }
             }
         }
+        // Already the phone's style. On the Mac the default lays sections out bare, with no
+        // room for footers or long labels.
+        .formStyle(.grouped)
         .navigationTitle(isNew ? "New habit" : "Edit habit")
         .inlineNavigationTitle()
         .toolbar {
