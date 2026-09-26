@@ -130,12 +130,13 @@ final class PhoneBridge: NSObject {
         var merged = false
         // Reports arrive with the phone in a pocket and the app in the background. Held open
         // so the ticks reach iCloud, and the Mac, without the app being opened.
-        if files.contains(where: { $0.pathExtension == "json" }) { await CloudUploadHold.shared.begin() }
+        if files.contains(where: { $0.pathExtension == "json" }) { CloudUploadHold.shared.begin() }
         for file in files where file.pathExtension == "json" {
             do {
                 let report = try BridgeCodec.decodeReport(try Data(contentsOf: file))
                 let result = try await model.store.merge(report)
                 Self.log.info("Report merged: \(report.completions.count) completions, \(result.written) rows written")
+                CloudUploadHold.shared.wrote()
                 try FileManager.default.removeItem(at: file)
                 merged = true
                 problem = nil
@@ -212,7 +213,19 @@ extension PhoneBridge: WCSessionDelegate {
             Task { @MainActor in problem = "Could not keep what your watch sent. \(error.localizedDescription)" }
             return
         }
-        Task { @MainActor in mergePendingReports() }
+        // iOS may suspend the app as soon as this returns, before the hops to the main actor
+        // reach the upload hold. A system activity, which can be started from this thread,
+        // keeps it up until the hold has begun.
+        let holding = DispatchSemaphore(value: 0)
+        ProcessInfo.processInfo.performExpiringActivity(withReason: "Merge a report from the watch") { expired in
+            guard !expired else { return }
+            _ = holding.wait(timeout: .now() + 10)
+        }
+        Task { @MainActor in
+            CloudUploadHold.shared.begin()
+            holding.signal()
+            mergePendingReports()
+        }
     }
 
     nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
