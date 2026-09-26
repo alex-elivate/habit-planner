@@ -128,6 +128,9 @@ final class PhoneBridge: NSObject {
         else { return }
 
         var merged = false
+        // Reports arrive with the phone in a pocket and the app in the background. Held open
+        // so the ticks reach iCloud, and the Mac, without the app being opened.
+        if files.contains(where: { $0.pathExtension == "json" }) { await CloudUploadHold.shared.begin() }
         for file in files where file.pathExtension == "json" {
             do {
                 let report = try BridgeCodec.decodeReport(try Data(contentsOf: file))
