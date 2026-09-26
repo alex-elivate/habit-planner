@@ -155,6 +155,7 @@ struct PlannedHabitRow: View {
         .accessibilityIdentifier("plan.\(routine.rawValue)")
         .sheet(isPresented: $editing) {
             NavigationStack { PlanHabitView(routine: routine, title: plan?.title ?? "") }
+                .sheetMinimumSize(width: 440, height: 300)
         }
     }
 }
@@ -192,6 +193,9 @@ struct PlanHabitView: View {
                 }
             }
         }
+        // Already the phone's style. On the Mac the default lays sections out bare, with no
+        // room for footers or long labels.
+        .formStyle(.grouped)
         .navigationTitle("Next habit")
         .inlineNavigationTitle()
         .toolbar {

@@ -149,8 +149,11 @@ struct MacRoutineView: View {
         }
         .sheet(isPresented: $adding) {
             NavigationStack { HabitEditorView(mode: .new(routine)) }
-                .frame(minWidth: 460, minHeight: 440)
+                .frame(minWidth: 480, minHeight: 540)
         }
+        #if DEBUG
+        .onChange(of: SnapshotDriver.shared.adding) { _, new in adding = new }
+        #endif
     }
 }
 
