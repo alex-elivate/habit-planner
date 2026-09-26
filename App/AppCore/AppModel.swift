@@ -26,6 +26,9 @@ final class AppModel: RoutineActing {
     /// a record written by a newer build is exactly the kind of failure nobody would notice.
     private(set) var unreadable: [StoreMappingError] = []
 
+    /// Whether a reload has finished, so an empty list can be told apart from one not read yet.
+    private(set) var hasLoaded = false
+
     /// The last write that failed, for the interface to show.
     var failure: String?
 
@@ -64,6 +67,7 @@ final class AppModel: RoutineActing {
                                        uniquingKeysWith: { first, _ in first })
             planned = plans.values.resolved()
             unreadable = loaded.skipped + runs.skipped + bindings.skipped + plans.skipped
+            hasLoaded = true
             refreshWidgets()
             afterReload?()
         } catch {
@@ -150,6 +154,26 @@ final class AppModel: RoutineActing {
         }
     }
 
+    /// Whether `routine` is still taking its starting set today. See `LockInGate.isSettingUp`.
+    func isSettingUp(_ routine: RoutineSlot) -> Bool {
+        LockInGate.isSettingUp(routine, histories: histories)
+    }
+
+    /// How many starting habits in `routine` have yet to bed in, when those are what the gate
+    /// is waiting on. `nil` when it is waiting on a single habit.
+    func startingHabitsBeddingIn(_ routine: RoutineSlot) -> Int? {
+        let starting = LockInGate.startingSet(in: routine, histories: histories)
+        guard starting.count > 1,
+              let judged = LockInGate.judged(in: routine, histories: histories),
+              starting.contains(where: { $0.habit.id == judged.habit.id }) else { return nil }
+        return starting.count { !LockInGate.assess($0).isLockedIn }
+    }
+
+    /// Whether this device has nothing to show yet: no habits at all, archived or not, and
+    /// nothing it failed to read. Never in the demo modes, which fill in their habits after
+    /// the first load.
+    var isEmpty: Bool { !mode.isSeeded && hasLoaded && histories.isEmpty && unreadable.isEmpty }
+
     /// Whether `routine` has anything left to run today.
     func hasWorkRemaining(in routine: RoutineSlot) -> Bool {
         RoutineRunner(routine: routine, histories: histories, resuming: runsToday[routine],
@@ -211,7 +235,8 @@ final class AppModel: RoutineActing {
     ///
     /// Checked here as well as in the interface, because the button's state was computed from
     /// a fold that may be a sync behind.
-    func add(_ draft: HabitDraft) async throws {
+    @discardableResult
+    func add(_ draft: HabitDraft) async throws -> Bool {
         await reload()
         guard gate(for: draft.routine).isOpen else {
             throw gateHasUnreadableInput ? AddHabitError.unreadable : AddHabitError.gateClosed
@@ -234,6 +259,25 @@ final class AppModel: RoutineActing {
            plan.title.localizedCaseInsensitiveCompare(habit.title) == .orderedSame {
             await clearPlan(for: draft.routine)
         }
+        return added
+    }
+
+    /// Adds a routine's starting set, in the order given, while the routine is in setup.
+    ///
+    /// One habit at a time through `add`, so each passes the same checks. Stops at the first
+    /// that fails and returns how many were added, since the ones before it are saved.
+    func addStartingSet(_ titles: [String], to routine: RoutineSlot) async -> Int {
+        for (index, title) in titles.enumerated() {
+            var draft = HabitDraft(routine: routine)
+            draft.title = title
+            do {
+                guard try await add(draft) else { return index }
+            } catch {
+                failure = "\(title) was not added. \(error.localizedDescription)"
+                return index
+            }
+        }
+        return titles.count
     }
 
     // MARK: - Intents

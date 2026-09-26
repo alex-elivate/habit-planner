@@ -106,7 +106,8 @@ public struct RoutineGlance: Hashable, Sendable {
 
     /// How close the routine is to allowing another habit.
     public enum Unlock: Hashable, Sendable {
-        /// A habit may be added now. Also the state of a routine with no habits yet.
+        /// A habit may be added now. Also the state of a routine with no habits yet, or one
+        /// taking its starting set today.
         case open
         /// The newest habit is still bedding in.
         case beddingIn(habitTitle: String, assessment: LockInGate.Assessment)
@@ -125,8 +126,10 @@ public struct RoutineGlance: Hashable, Sendable {
                 return
             }
             // The gate's own selection, so the progress shown is the habit actually judged.
-            // An empty routine is never gated.
-            guard let judged = LockInGate.judged(in: routine, histories: histories) else {
+            // An empty routine, and one still taking its starting set, is never gated.
+            let histories = Array(histories)
+            guard !LockInGate.isSettingUp(routine, histories: histories),
+                  let judged = LockInGate.judged(in: routine, histories: histories) else {
                 self = .open
                 return
             }

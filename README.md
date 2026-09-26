@@ -11,7 +11,7 @@ Most habit apps show a checklist and let you pick items in any order. That works
 ## Status
 
 Phases 3 to 7 are built: the iOS app, the watchOS app and its bridge, the widgets and
-complications, Siri and Shortcuts, and the Mac app, with 245 package tests. The iPhone and watch
+complications, Siri and Shortcuts, and the Mac app, with 253 package tests. The iPhone and watch
 apps are tested on simulators. The Mac app has been run in its demo mode only. None of them has run on a physical
 device yet, and the CloudKit schema has not been primed or promoted. See
 [Before the first TestFlight build](#before-the-first-testflight-build).
@@ -78,6 +78,24 @@ A habit unlocks the right to add another when, across the trailing 28 **schedule
 Counting occurrences rather than calendar days means a three-times-a-week habit is judged on the same terms as a daily one. Left to run, this lands somewhere in the four to ten week range.
 
 That range is the point. Clear deliberately avoids naming a number of days. The study he cites, Lally et al. (2010), found a mean near 66 days across a range of 18 to 254. The familiar 21-day figure traces back to Maxwell Maltz's observations of plastic surgery patients and describes nothing about habits.
+
+#### The starting set
+
+Somebody who already has a routine should not have to enter it one habit every four weeks. On a
+routine's first day, any number of habits can join. That day is worked out from join days alone,
+so nothing records that setup happened: a routine is in setup while it is empty or every habit
+in it joined today, and the window closes at midnight.
+
+Those habits are then judged together. The gate waits on the starting habit furthest from
+bedding in, and opens once every one of them has. Habits somebody already does pass in about four
+weeks, and a starting set too large to keep up shows up as the reason the routine stays shut.
+Once a later habit joins, only that habit is judged, as below.
+
+The app opens on a setup screen for each routine when nothing is stored. It says to skip it on a
+second device, and closes itself if habits arrive from iCloud before anything is typed, since
+setting up again there would duplicate them.
+
+#### After the starting set
 
 Only the habit that most recently joined the routine is judged. Three rules keep that from being
 sidestepped:
