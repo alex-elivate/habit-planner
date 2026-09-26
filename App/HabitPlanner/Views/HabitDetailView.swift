@@ -123,6 +123,12 @@ private struct HealthLinkSection: View {
                 if let binding = model.bindings[habitID] {
                     LabeledContent("Linked to", value: name ?? "…")
                         .task(id: binding) { name = await health.describe(binding) }
+                    if binding.signal == .medication, !HealthService.isKey(binding.externalIdentifier) {
+                        // Stored by an older build, whose links could not tell drugs apart.
+                        Text("Linked by an older version, which could mix up medications, so doses are not counted until you relink. Unlink, then link again.")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
                     Button("Unlink", role: .destructive) {
                         Task { await model.unlink(habitID) }
                     }
@@ -144,6 +150,8 @@ private struct HealthLinkPicker: View {
     @Environment(\.dismiss) private var dismiss
     let habitID: UUID
 
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var medications: [HealthService.Medication]?
     @State private var problem: String?
 
@@ -163,17 +171,28 @@ private struct HealthLinkPicker: View {
                     ForEach(medications) { medication in
                         Button(medication.name) { linkMedication(medication) }
                     }
+                    // Health asks which medications to share only the first time. After that,
+                    // sharing another is done in Health, and nothing here said so.
+                    Button("Share another medication", systemImage: "arrow.up.forward.app") {
+                        if let health = URL(string: "x-apple-health://") { openURL(health) }
+                    }
                 } else {
                     Button("Choose medications", action: loadMedications)
                 }
             } header: {
                 Text("Medications")
             } footer: {
-                Text("Counts a dose you log as taken in Health. Health keeps the medication, dose and schedule.")
+                Text("Counts a dose you log as taken in Health. Only medications you have shared with Habit Planner appear here. To share another, open Health, tap your profile picture, then Apps, then Habit Planner.")
             }
             if let problem {
                 Section { Text(problem).foregroundStyle(.red) }
             }
+        }
+        // Back from sharing another medication in Health, so the list shows it.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, medications != nil else { return }
+            // A failed reload keeps the list already shown.
+            Task { if let fresh = try? await health.sharedMedications() { medications = fresh } }
         }
         .navigationTitle("Link to Health")
         .navigationBarTitleDisplayMode(.inline)

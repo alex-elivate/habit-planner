@@ -44,17 +44,83 @@ final class HealthService {
     // MARK: - Medications
 
     nonisolated struct Medication: Identifiable, Hashable, Sendable {
-        /// The archived concept identifier. Opaque, and never shown.
+        /// What a binding stores to find this medication again. See `key(for:)`.
         let id: String
         let name: String
+    }
+
+    /// A medication and HealthKit's live identifier for it, which dose queries need.
+    ///
+    /// The identifier is not `Sendable`, but it is immutable and only read, so it is carried
+    /// out of the query's callback as it is.
+    private nonisolated struct SharedMedication: @unchecked Sendable {
+        let medication: Medication
+        let details: HKMedicationConcept
+        var concept: HKHealthConceptIdentifier { details.identifier }
+    }
+
+    /// A readable key for a medication: the clinical codes Health attaches to it, or its name
+    /// and form when it has none.
+    ///
+    /// Stored in place of the concept identifier itself. That identifier has no public
+    /// initialiser and shows only its domain, which is "medication" for every drug. Links
+    /// stored as its archive showed the same name for different drugs, so the key is built
+    /// from what is readable, and the live identifier is looked up by it when needed.
+    ///
+    /// Matched loosely, by `closeness(of:to:)`, so a link survives Health refining a drug's codes
+    /// or name.
+    nonisolated static func key(for concept: HKMedicationConcept) -> String {
+        let codes = codings(of: concept).sorted()
+        if !codes.isEmpty { return "codes:" + codes.joined(separator: ",") }
+        return "name:\(concept.displayText)|\(concept.generalForm.rawValue)"
+    }
+
+    private nonisolated static func codings(of concept: HKMedicationConcept) -> Set<String> {
+        Set(concept.relatedCodings.map { "\($0.system)|\($0.code)" })
+    }
+
+    /// How closely the medication stored as `key` matches `concept`, or 0 for not at all.
+    ///
+    /// For a coded key, the number of codes in common. Related drugs can share a code, such as
+    /// one for an ingredient, so the caller takes only a single best match. For a named key,
+    /// 1 when the name and, where stored, the form are the same. The form is after the last
+    /// "|", and a key from a build that left it out is matched on the name alone.
+    nonisolated static func closeness(of key: String, to concept: HKMedicationConcept) -> Int {
+        if key.hasPrefix("codes:") {
+            let stored = Set(key.dropFirst("codes:".count).split(separator: ",").map(String.init))
+            let shared = stored.intersection(codings(of: concept)).count
+            // Most of the stored codes, not just one. A single shared code can be the
+            // ingredient, which another strength of the same drug also carries.
+            return shared * 2 > stored.count ? shared : 0
+        }
+        guard key.hasPrefix("name:") else { return 0 }
+        let rest = key.dropFirst("name:".count)
+        let name: Substring, form: Substring?
+        if let bar = rest.lastIndex(of: "|") {
+            name = rest[..<bar]
+            form = rest[rest.index(after: bar)...]
+        } else {
+            name = rest
+            form = nil
+        }
+        guard concept.displayText.localizedCaseInsensitiveCompare(String(name)) == .orderedSame else { return 0 }
+        if let form, form != concept.generalForm.rawValue { return 0 }
+        return 1
+    }
+
+    /// Whether `stored` is a key from `key(for:)`, rather than an archive from an older build.
+    nonisolated static func isKey(_ stored: String?) -> Bool {
+        stored?.hasPrefix("codes:") == true || stored?.hasPrefix("name:") == true
     }
 
     /// Asks which medications the person will share, then lists the ones they chose.
     ///
     /// Medications use per-object authorisation. Passing the medication type to the ordinary
-    /// `requestAuthorization` throws, which is sometimes misread as a hidden entitlement. The
-    /// prompt always appears, even if access was granted before, because the person picks
-    /// medications individually each time.
+    /// `requestAuthorization` throws, which is sometimes misread as a hidden entitlement.
+    ///
+    /// The prompt appears only the first time. Found on a device: after that the call returns
+    /// at once, and a medication not shared then can only be shared from Health itself. The
+    /// picker says so and offers to open Health.
     func requestMedicationAccess() async throws -> [Medication] {
         try await store.requestPerObjectReadAuthorization(for: HKObjectType.userAnnotatedMedicationType(),
                                                           predicate: nil)
@@ -62,6 +128,29 @@ final class HealthService {
     }
 
     func sharedMedications() async throws -> [Medication] {
+        try await shared().map(\.medication)
+    }
+
+    /// The shared medication a binding points at, or `nil` if none is shared that matches.
+    ///
+    /// An exact key first, then a loose match. A binding from an older build holds an archived
+    /// identifier, which is never matched: that match is what mixed drugs up.
+    private func sharedMedication(for stored: String?) async throws -> SharedMedication? {
+        let all = try await shared()
+        guard let stored else { return nil }
+        if Self.isKey(stored) {
+            if let exact = all.first(where: { $0.medication.id == stored }) { return exact }
+            // Only a single best match. Two drugs matching equally well is a guess, and a guess
+            // here counts one drug's doses for another.
+            let scored = all.map { ($0, Self.closeness(of: stored, to: $0.details)) }.filter { $0.1 > 0 }
+            guard let best = scored.map(\.1).max() else { return nil }
+            guard scored.count(where: { $0.1 == best }) == 1 else { throw SignalError.ambiguous }
+            return scored.first { $0.1 == best }?.0
+        }
+        return nil
+    }
+
+    private func shared() async throws -> [SharedMedication] {
         let collector = MedicationCollector()
         return try await withCheckedThrowingContinuation { continuation in
             collector.continuation = continuation
@@ -80,8 +169,8 @@ final class HealthService {
     /// first terminal callback wins and anything after it is ignored.
     private nonisolated final class MedicationCollector: @unchecked Sendable {
         private let lock = NSLock()
-        private var found: [Medication] = []
-        var continuation: CheckedContinuation<[Medication], any Error>?
+        private var found: [SharedMedication] = []
+        var continuation: CheckedContinuation<[SharedMedication], any Error>?
 
         func receive(_ medication: HKUserAnnotatedMedication?, done: Bool, error: (any Error)?) {
             lock.lock()
@@ -92,9 +181,12 @@ final class HealthService {
                 continuation.resume(throwing: error)
                 return
             }
-            if let medication, !medication.isArchived,
-               let id = HealthService.archive(medication.medication.identifier) {
-                found.append(Medication(id: id, name: medication.nickname ?? medication.medication.displayText))
+            if let medication, !medication.isArchived {
+                let concept = medication.medication
+                found.append(SharedMedication(
+                    medication: Medication(id: HealthService.key(for: concept),
+                                           name: medication.nickname ?? concept.displayText),
+                    details: concept))
             }
             if done {
                 self.continuation = nil
@@ -103,21 +195,17 @@ final class HealthService {
         }
     }
 
-    nonisolated static func archive(_ identifier: HKHealthConceptIdentifier) -> String? {
-        try? NSKeyedArchiver.archivedData(withRootObject: identifier, requiringSecureCoding: true)
-            .base64EncodedString()
-    }
-
-    static func unarchive(_ string: String?) -> HKHealthConceptIdentifier? {
-        guard let string, let data = Data(base64Encoded: string) else { return nil }
-        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKHealthConceptIdentifier.self, from: data)
-    }
-
     // MARK: - Signals
 
+    /// Thrown rather than answering with no doses, because the backfill takes an answer as
+    /// having checked those days and never looks at them again.
     enum SignalError: Error {
         case unavailable
         case unreadableBinding
+        /// The linked medication is not shared with the app now. Sharing it again resumes.
+        case notShared
+        /// More than one shared medication fits the link equally well. Relinking settles it.
+        case ambiguous
     }
 
     /// Every instant in `interval` at which Health saw this binding's signal.
@@ -143,8 +231,11 @@ final class HealthService {
             return workouts.map(\.startDate)
 
         case .medication:
-            guard let concept = Self.unarchive(binding.externalIdentifier) else {
-                throw SignalError.unreadableBinding
+            // A link from an older build may point at the wrong drug, so it counts nothing until
+            // it is relinked. Its days stay unchecked rather than filled from the wrong doses.
+            guard Self.isKey(binding.externalIdentifier) else { throw SignalError.unreadableBinding }
+            guard let concept = try await sharedMedication(for: binding.externalIdentifier)?.concept else {
+                throw SignalError.notShared
             }
             let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
                 during,
@@ -165,8 +256,15 @@ final class HealthService {
         case .workout:
             return Self.workoutName(for: binding.externalIdentifier)
         case .medication:
-            let medications = (try? await sharedMedications()) ?? []
-            return medications.first { $0.id == binding.externalIdentifier }?.name ?? "Medication"
+            guard Self.isKey(binding.externalIdentifier) else { return "Relink needed" }
+            do {
+                return try await sharedMedication(for: binding.externalIdentifier)?.medication.name
+                    ?? "A medication no longer shared"
+            } catch SignalError.ambiguous {
+                return "Relink needed"
+            } catch {
+                return "Health could not be read"
+            }
         }
     }
 }
