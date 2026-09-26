@@ -71,9 +71,15 @@ final class Launch {
                 start: actions.start,
                 completeCurrent: { routine in
                     await CloudUploadHold.shared.begin()
-                    let outcome = try await actions.completeCurrent(routine)
-                    await CloudUploadHold.shared.wrote()
-                    return outcome
+                    do {
+                        let outcome = try await actions.completeCurrent(routine)
+                        let saved = if case .completed = outcome { true } else { false }
+                        await CloudUploadHold.shared.finish(saved: saved)
+                        return outcome
+                    } catch {
+                        await CloudUploadHold.shared.finish(saved: false)
+                        throw error
+                    }
                 },
                 glance: actions.glance
             )

@@ -11,8 +11,9 @@ import UIKit
 /// chance to send it. The latest, because one upload started after an earlier write may not
 /// carry a later one.
 ///
-/// `begin()` before a write, so the app stays up while it happens, and `wrote()` once it has
-/// saved, which is the moment an upload has to start after. Capped, because iOS allows about
+/// `begin()` before a write, so the app stays up while it happens, and `finish(saved:)` once it
+/// is over. The hold ends when no write is still under way and an upload that started after the
+/// latest save has finished. An upload finishing mid-write would otherwise release the write. Capped, because iOS allows about
 /// half a minute and ends the app if it overstays.
 ///
 /// Nothing is held while the app is on screen, where it keeps running anyway.
@@ -25,6 +26,8 @@ final class CloudUploadHold {
     private var deadline: Task<Void, Never>?
     /// When the latest write saved. Only an upload that started after it can carry it.
     private var since: Date?
+    /// Writes begun and not yet finished.
+    private var inFlight = 0
 
     private static let limit: Duration = .seconds(25)
     private static let log = Logger(subsystem: "org.trusler.habitplanner", category: "upload")
@@ -32,6 +35,7 @@ final class CloudUploadHold {
     /// Call just before a background write. Several writes in a row share one hold.
     func begin() {
         guard UIApplication.shared.applicationState != .active else { return }
+        inFlight += 1
         if task == .invalid {
             task = UIApplication.shared.beginBackgroundTask(withName: "iCloud upload") { [weak self] in
                 MainActor.assumeIsolated { self?.end(reason: "time ran out") }
@@ -56,14 +60,17 @@ final class CloudUploadHold {
         }
     }
 
-    /// Call once a write has saved. Does nothing outside a hold.
-    func wrote() {
-        guard task != .invalid else { return }
-        since = .now
+    /// Call once a write begun with `begin()` is over. `saved` is whether it changed anything,
+    /// since a write that changed nothing gives iCloud nothing to upload.
+    func finish(saved: Bool) {
+        guard task != .invalid, inFlight > 0 else { return }
+        inFlight -= 1
+        if saved { since = .now }
+        if inFlight == 0, since == nil { end(reason: "nothing to upload") }
     }
 
     private func exportFinished(startedAt started: Date) {
-        guard let since, started >= since else { return }
+        guard inFlight == 0, let since, started >= since else { return }
         end(reason: "uploaded")
     }
 
@@ -75,6 +82,7 @@ final class CloudUploadHold {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         since = nil
+        inFlight = 0
         UIApplication.shared.endBackgroundTask(task)
         task = .invalid
     }
