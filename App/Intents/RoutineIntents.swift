@@ -39,8 +39,8 @@ struct StartRoutineIntent: AppIntent {
 
 /// Marks the current habit done without opening anything, and says what comes next.
 ///
-/// Also the intent behind the widget's Done button. See the `LiveActivityIntent` conformance
-/// below for where that runs.
+/// For Siri and Shortcuts. The widget's Done buttons use `CompleteMorningStepIntent` and
+/// `CompleteEveningStepIntent`, below.
 struct CompleteCurrentHabitIntent: AppIntent {
     static let title: LocalizedStringResource = "Mark Current Habit Done"
     static let description = IntentDescription(
@@ -68,14 +68,55 @@ struct CompleteCurrentHabitIntent: AppIntent {
     }
 }
 
+// MARK: - The widget's Done buttons
+
+// One intent per routine, each with no parameters, rather than `CompleteCurrentHabitIntent`
+// with its routine filled in. The widget extension cannot read its own App Intents metadata
+// ("Failed to fetch metadata"), so a parameter set there arrives in the app as nil. Nil means
+// the routine for the time of day, so in the evening the morning button ticked nothing, and
+// in the large widget the evening button ticked a morning habit. With nothing to pass, there
+// is nothing to lose.
+
+/// The Done button on the morning routine's widget.
+struct CompleteMorningStepIntent: AppIntent {
+    static let title: LocalizedStringResource = "Mark Current Morning Habit Done"
+    static let isDiscoverable = false
+    static let supportedModes: IntentModes = .background
+
+    @Dependency private var actions: RoutineActions
+
+    func perform() async throws -> some IntentResult {
+        _ = try await actions.completeCurrent(.morning)
+        return .result()
+    }
+}
+
+/// The Done button on the evening routine's widget.
+struct CompleteEveningStepIntent: AppIntent {
+    static let title: LocalizedStringResource = "Mark Current Evening Habit Done"
+    static let isDiscoverable = false
+    static let supportedModes: IntentModes = .background
+
+    @Dependency private var actions: RoutineActions
+
+    func perform() async throws -> some IntentResult {
+        _ = try await actions.completeCurrent(.evening)
+        return .result()
+    }
+}
+
 #if os(iOS)
-/// Runs the widget's Done button in the app, not the widget extension.
-///
-/// Apple documents that an intent conforming to `LiveActivityIntent` runs in the app's
-/// process. That is borrowed here for the routing alone, since there is no Live Activity. It
-/// keeps the widget read only: the tick goes through the app's own store, which is the only
-/// process that syncs, instead of a second writable container opened from an extension.
-/// watchOS has no such protocol, and a complication has no buttons to need it.
+// Runs the widget's Done buttons in the app, not the widget extension.
+//
+// Apple documents that an intent conforming to `LiveActivityIntent` runs in the app's
+// process. That is borrowed here for the routing alone, since there is no Live Activity. It
+// keeps the widget read only: the tick goes through the app's own store, which is the only
+// process that syncs, instead of a second writable container opened from an extension.
+// watchOS has no such protocol, and a complication has no buttons to need it.
+extension CompleteMorningStepIntent: LiveActivityIntent {}
+extension CompleteEveningStepIntent: LiveActivityIntent {}
+// Siri's version too. It is compiled into the widget extension along with the rest of this
+// folder, and nothing registers `RoutineActions` there.
 extension CompleteCurrentHabitIntent: LiveActivityIntent {}
 #endif
 

@@ -7,6 +7,7 @@ struct TodayView: View {
 
     @State private var adding: RoutineSlot?
     @State private var showingSettings = false
+    @State private var firstLaunch = false
 
     var body: some View {
         List {
@@ -44,6 +45,15 @@ struct TodayView: View {
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack { SettingsView() }
+        }
+        // First launch: walk through both routines. Only when nothing at all is stored, so
+        // somebody who skipped it sees it again rather than an empty screen, and it never
+        // appears over habits.
+        .sheet(isPresented: $firstLaunch) {
+            NavigationStack { RoutineSetupView(routine: .morning, then: .evening) }
+        }
+        .onChange(of: model.isEmpty, initial: true) { _, empty in
+            if empty { firstLaunch = true }
         }
         .refreshable { await model.reload() }
     }

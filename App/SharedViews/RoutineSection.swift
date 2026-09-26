@@ -106,8 +106,27 @@ struct AddHabitRow: View {
     let routine: RoutineSlot
     let add: () -> Void
 
+    @State private var settingUp = false
+
     var body: some View {
         switch model.gate(for: routine) {
+        case .open where model.isSettingUp(routine):
+            // Any number of habits can join on the first day, so the habits somebody already
+            // does can all come in together.
+            let empty = model.habits(in: routine).isEmpty
+            if !empty {
+                Text("Setting up today. Add every habit you already do. From tomorrow, a new habit can join once all of these have bedded in.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            // The sheet hangs off this one row. On the group, a list gives every row its own copy.
+            Button(empty ? "Set up your \(routine.title.lowercased()) routine" : "Add more habits",
+                   systemImage: "list.bullet") { settingUp = true }
+                .sheet(isPresented: $settingUp) {
+                    NavigationStack { RoutineSetupView(routine: routine) }
+                        .sheetMinimumSize(width: 480, height: 540)
+                }
+            Button("Add a habit with details", systemImage: "plus", action: add)
         case .open:
             Button(model.planned.active(for: routine).map { "Add \($0.title)" } ?? "Add a habit",
                    systemImage: "plus", action: add)
@@ -121,8 +140,15 @@ struct AddHabitRow: View {
         case .blocked(let judged):
             if let habit = model.history(for: judged.habitID)?.habit {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Next habit unlocks when \(habit.title) beds in", systemImage: "lock")
-                        .font(.subheadline)
+                    let waiting = model.waitingOn(routine).count
+                    if waiting > 1 {
+                        Label("Next habit unlocks when your \(waiting) newest habits bed in", systemImage: "lock")
+                            .font(.subheadline)
+                        Text("\(habit.title) has the furthest to go.").font(.caption)
+                    } else {
+                        Label("Next habit unlocks when \(habit.title) beds in", systemImage: "lock")
+                            .font(.subheadline)
+                    }
                     ProgressView(value: judged.repetitionProgress)
                     Text(judged.explanation).font(.caption).foregroundStyle(.secondary)
                 }

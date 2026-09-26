@@ -17,6 +17,7 @@ struct MacRootView: View {
     @State private var page: Page? = .routine(.morning)
     @State private var path: [UUID] = []
     @State private var running: RoutineSlot?
+    @State private var firstLaunch = false
 
     var body: some View {
         @Bindable var model = model
@@ -62,6 +63,14 @@ struct MacRootView: View {
         }
         .sheet(item: $running, onDismiss: { Task { await model.reload() } }) { routine in
             MacRunnerView(routine: routine)
+        }
+        // First launch, as on the phone.
+        .sheet(isPresented: $firstLaunch) {
+            NavigationStack { RoutineSetupView(routine: .morning, then: .evening) }
+                .sheetMinimumSize(width: 480, height: 540)
+        }
+        .onChange(of: model.isEmpty, initial: true) { _, empty in
+            if empty { firstLaunch = true }
         }
         .alert("Something went wrong", isPresented: Binding(
             get: { model.failure != nil }, set: { if !$0 { model.failure = nil } }

@@ -113,10 +113,12 @@ private struct NextHabitView: View {
             if routine.nextHabitTitle != nil {
                 #if os(iOS)
                 // Runs in the app, which ticks the habit next in sequence and reloads this
-                // widget. See `CompleteCurrentHabitIntent`.
-                Button(intent: CompleteCurrentHabitIntent(routine: routine.routine)) {
-                    Label("Done", systemImage: "checkmark")
-                        .font(.caption.weight(.semibold))
+                // widget. One intent per routine: see `CompleteMorningStepIntent`.
+                Group {
+                    switch routine.routine {
+                    case .morning: Button(intent: CompleteMorningStepIntent()) { doneLabel }
+                    case .evening: Button(intent: CompleteEveningStepIntent()) { doneLabel }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.accentColor)
@@ -142,6 +144,11 @@ private struct NextHabitView: View {
         } else {
             content()
         }
+    }
+
+    private var doneLabel: some View {
+        Label("Done", systemImage: "checkmark")
+            .font(.caption.weight(.semibold))
     }
 }
 

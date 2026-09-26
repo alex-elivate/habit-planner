@@ -69,8 +69,9 @@ struct HabitReportView: View {
         }
     }
 
+    /// Shown for every habit the gate is waiting on, which after a starting set is several.
     private func judged(_ history: HabitHistory) -> LockInGate.Assessment? {
-        guard LockInGate.judged(in: history.habit.routine, histories: model.histories)?.habit.id == habitID
+        guard model.waitingOn(history.habit.routine).contains(where: { $0.habit.id == habitID })
         else { return nil }
         return LockInGate.assess(history)
     }

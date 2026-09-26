@@ -52,15 +52,19 @@ public enum LockInGate {
 
     /// Judges a single habit.
     public static func assess(_ history: HabitHistory) -> Assessment {
-        let occurrences = history.settledOccurrences
+        assess(history.habit.id, occurrences: history.settledOccurrences, today: history.today)
+    }
+
+    /// Judges a habit on `occurrences` alone, as if `today` were the day after the last.
+    private static func assess(_ habitID: UUID, occurrences: [ScheduledOccurrence], today: DayKey) -> Assessment {
         let window = occurrences.suffix(requiredOccurrences)
         let rate: Double? = window.isEmpty
             ? nil
             : Double(window.count(where: \.isCompleted)) / Double(window.count)
 
         let doubleMiss = firstDoubleMiss(
-            in: history.settledOccurrences,
-            secondMissOnOrAfter: history.today.advanced(by: -doubleMissWindowDays)
+            in: occurrences,
+            secondMissOnOrAfter: today.advanced(by: -doubleMissWindowDays)
         )
 
         let decision: Decision
@@ -78,7 +82,7 @@ public enum LockInGate {
         }
 
         return Assessment(
-            habitID: history.habit.id,
+            habitID: habitID,
             elapsedOccurrences: occurrences.count,
             requiredOccurrences: requiredOccurrences,
             rate: rate,
@@ -90,9 +94,15 @@ public enum LockInGate {
 
     /// Whether a new habit may be added to `routine`.
     ///
-    /// Only the habit that most recently joined the routine is examined. Older habits have
-    /// already earned their place, and re-judging them would mean one rough week
-    /// retroactively locking a routine the person built months ago.
+    /// Only the habits that joined the routine most recently are examined, the newest
+    /// **cohort**. Older habits have already earned their place, and re-judging them would
+    /// mean one rough week retroactively locking a routine the person built months ago.
+    ///
+    /// A cohort is normally one habit. The exception is the **starting set**: on a routine's
+    /// first day any number of habits can join, so somebody who already has a routine can
+    /// enter all of it, and every one of them is then judged together. Two devices adding a
+    /// habit each on the same day, before either has seen the other's, also form a cohort,
+    /// and both are judged rather than whichever sorts last.
     ///
     /// A **paused** habit is still examined. Pausing is not a way past the gate: if pausing
     /// the newest habit released it, the person could add another, resume the first, and have
@@ -100,36 +110,111 @@ public enum LockInGate {
     /// the routine until it is resumed and beds in, or is archived.
     ///
     /// An **archived** habit is out of the routine and never examined. Restoring one is
-    /// adding it back, so it joins the routine on the day of the restore and becomes the habit
-    /// judged next. See `canRestore(_:histories:)` for when that is allowed.
+    /// adding it back. See `gateJoinDay(_:)` for where it queues and `canRestore(_:histories:)`
+    /// for when that is allowed.
     public static func canAddHabit(
         to routine: RoutineSlot,
         histories: some Sequence<HabitHistory>
     ) -> Decision {
-        guard let newest = judged(in: routine, histories: histories) else {
-            return .open  // The first habit in an empty routine is never gated.
-        }
-        return assess(newest).decision
+        let all = Array(histories)
+        // The first habit in an empty routine is never gated, and neither is the rest of the
+        // starting set on the day it is entered.
+        guard !isSettingUp(routine, histories: all),
+              let waitingOn = judged(in: routine, histories: all) else { return .open }
+        return assess(waitingOn).decision
     }
 
-    /// The habit `canAddHabit` judges for `routine`, or `nil` if the routine is empty.
+    /// Whether `routine` is still taking its starting set: it has never had a habit, or every
+    /// habit it has ever had started today.
+    ///
+    /// Worked out from start days alone, so nothing records that setup happened, and the
+    /// window closes at midnight on its own. Archived habits count, so archiving a whole
+    /// routine does not reopen it. Nor does winding the clock back to the first day: anything
+    /// recorded after "today" means today is not the day it claims to be.
+    public static func isSettingUp(
+        _ routine: RoutineSlot,
+        histories: some Sequence<HabitHistory>
+    ) -> Bool {
+        let ever = histories.filter { $0.habit.routine == routine }
+        guard let today = ever.first?.today else { return true }
+        return ever.allSatisfy { $0.habit.startedOn == today && !$0.hasRecordsAfterToday }
+    }
+
+    /// The day `history` counts as having joined its routine, for the gate's ordering.
+    ///
+    /// Its lifecycle's join day: the start day, or the day of its latest restore. Except that
+    /// a habit restored after it had bedded in takes its old place back. It earned that place
+    /// before it left, and queueing it as the newest would let it stand in for a habit still
+    /// bedding in and open the gate early.
+    ///
+    /// Judged on its record from before it was archived, not on today's, so its place is
+    /// settled at the restore and a rough week later cannot send it to the back of the queue.
+    public static func gateJoinDay(_ history: HabitHistory) -> DayKey {
+        let joined = history.lifecycle.joinedRoutine(asOf: history.today)
+        guard joined != history.habit.startedOn, hadBeddedInBeforeLeaving(history) else { return joined }
+        return history.habit.startedOn
+    }
+
+    /// Whether `history` had bedded in when it was last archived. For a habit never archived,
+    /// whether it has bedded in now.
+    public static func hadBeddedInBeforeLeaving(_ history: HabitHistory) -> Bool {
+        let today = history.today
+        guard let left = history.lifecycle.transitions.last(where: { $0.state == .archived && $0.day <= today })?.day
+        else { return assess(history).isLockedIn }
+        let before = history.settledOccurrences.filter { $0.day < left }
+        return assess(history.habit.id, occurrences: before, today: left).isLockedIn
+    }
+
+    /// The habits the gate judges for `routine`: those sharing the latest `gateJoinDay`.
+    public static func newestCohort(
+        in routine: RoutineSlot,
+        histories: some Sequence<HabitHistory>
+    ) -> [HabitHistory] {
+        let members = inRoutine(routine, histories).map { ($0, gateJoinDay($0)) }
+        guard let latest = members.map(\.1).max() else { return [] }
+        return members.filter { $0.1 == latest }.map(\.0)
+    }
+
+    /// The habits in the newest cohort that have not bedded in, furthest behind first. Empty
+    /// while the routine is in setup, when nothing is being waited on.
+    ///
+    /// Furthest behind is the fewest sessions elapsed, then the lowest rate. Ties break on the
+    /// identifier, never on `order`: display position is mutable, and dragging a row must not
+    /// change which habit is judged.
+    public static func waitingOn(
+        in routine: RoutineSlot,
+        histories: some Sequence<HabitHistory>
+    ) -> [HabitHistory] {
+        let all = Array(histories)
+        guard !isSettingUp(routine, histories: all) else { return [] }
+        return newestCohort(in: routine, histories: all)
+            .map { ($0, assess($0)) }
+            .filter { !$0.1.isLockedIn }
+            .sorted { lhs, rhs in
+                if lhs.1.elapsedOccurrences != rhs.1.elapsedOccurrences {
+                    return lhs.1.elapsedOccurrences < rhs.1.elapsedOccurrences
+                }
+                if lhs.1.rate != rhs.1.rate { return (lhs.1.rate ?? 0) < (rhs.1.rate ?? 0) }
+                return lhs.0.habit.id.uuidString < rhs.0.habit.id.uuidString
+            }
+            .map(\.0)
+    }
+
+    /// The one habit whose assessment decides `canAddHabit`, or `nil` if the routine is empty:
+    /// the newest cohort's habit furthest behind, or any of them once all have bedded in.
     public static func judged(
         in routine: RoutineSlot,
         histories: some Sequence<HabitHistory>
     ) -> HabitHistory? {
-        let candidates = histories.filter {
-            $0.habit.routine == routine && $0.currentState != .archived
-        }
-        // Ties break on the identifier, never on `order`. Display position is mutable, so
-        // tiebreaking on it meant dragging a row could change which habit was judged and
-        // open an irreversible gate. Falling back on sequence order instead would have made
-        // the answer depend on an unordered SwiftData fetch.
-        return candidates.max { lhs, rhs in
-            let left = lhs.lifecycle.joinedRoutine(asOf: lhs.today)
-            let right = rhs.lifecycle.joinedRoutine(asOf: rhs.today)
-            if left != right { return left < right }
-            return lhs.habit.id.uuidString < rhs.habit.id.uuidString
-        }
+        let all = Array(histories)
+        let cohort = newestCohort(in: routine, histories: all)
+        if let behind = waitingOn(in: routine, histories: all).first { return behind }
+        return cohort.max { $0.habit.id.uuidString < $1.habit.id.uuidString }
+    }
+
+    /// The habits in `routine` the gate can examine: every one that is not archived.
+    private static func inRoutine(_ routine: RoutineSlot, _ histories: some Sequence<HabitHistory>) -> [HabitHistory] {
+        histories.filter { $0.habit.routine == routine && $0.currentState != .archived }
     }
 
     /// Whether an archived habit may be restored to its routine.
@@ -143,7 +228,7 @@ public enum LockInGate {
         histories: some Sequence<HabitHistory>
     ) -> Bool {
         let others = histories.filter { $0.habit.id != habit.habit.id }
-        return canAddHabit(to: habit.habit.routine, histories: others).isOpen || assess(habit).isLockedIn
+        return canAddHabit(to: habit.habit.routine, histories: others).isOpen || hadBeddedInBeforeLeaving(habit)
     }
 
     /// Whether changing a habit to `schedule` may be saved.
