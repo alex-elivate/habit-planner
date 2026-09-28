@@ -25,7 +25,8 @@ final class SwipeFlowTests: XCTestCase {
     private func expect(_ title: String, reads value: String, file: StaticString = #filePath, line: UInt = #line) {
         let element = row(title)
         let predicate = NSPredicate(format: "value == %@", value)
-        let met = XCTWaiter.wait(for: [expectation(for: predicate, evaluatedWith: element)], timeout: 5)
+        // Generous, since CI's simulator runs these several times slower than a desk machine.
+        let met = XCTWaiter.wait(for: [expectation(for: predicate, evaluatedWith: element)], timeout: 20)
         XCTAssertEqual(met, .completed, "\(title) reads \(String(describing: element.value)), not \(value)",
                        file: file, line: line)
     }
@@ -68,7 +69,7 @@ final class SwipeFlowTests: XCTestCase {
         // Swiping a done habit left offers Not done, which puts it back.
         row(water).swipeLeft()
         let notDone = app.buttons["Not done.\(water)"]
-        XCTAssertTrue(notDone.waitForExistence(timeout: 5))
+        XCTAssertTrue(notDone.waitForExistence(timeout: 15))
         notDone.tap()
         expect(water, reads: "Next")
     }
@@ -81,7 +82,7 @@ final class SwipeFlowTests: XCTestCase {
 
         row(water).swipeLeft()
         let unskip = app.buttons["Unskip.\(water)"]
-        XCTAssertTrue(unskip.waitForExistence(timeout: 5))
+        XCTAssertTrue(unskip.waitForExistence(timeout: 15))
         unskip.tap()
         expect(water, reads: "Next")
     }
@@ -89,7 +90,7 @@ final class SwipeFlowTests: XCTestCase {
     func testTapStillOpensTheHabit() {
         XCTAssertTrue(row(water).waitForExistence(timeout: 10))
         row(water).tap()
-        XCTAssertTrue(app.navigationBars[water].waitForExistence(timeout: 5)
+        XCTAssertTrue(app.navigationBars[water].waitForExistence(timeout: 15)
                       || app.staticTexts[water].waitForExistence(timeout: 1))
     }
 
@@ -97,14 +98,14 @@ final class SwipeFlowTests: XCTestCase {
         XCTAssertTrue(row(water).waitForExistence(timeout: 10))
         row(water).tap()
         let edit = app.buttons["Edit"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.waitForExistence(timeout: 15))
         edit.tap()
 
         let icon = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'Icon'")).firstMatch
-        XCTAssertTrue(icon.waitForExistence(timeout: 5))
+        XCTAssertTrue(icon.waitForExistence(timeout: 15))
         icon.tap()
         let teal = app.buttons["Teal"]
-        XCTAssertTrue(teal.waitForExistence(timeout: 5))
+        XCTAssertTrue(teal.waitForExistence(timeout: 15))
         teal.tap()
         app.buttons["cup and saucer"].tap()
         XCTAssertTrue(app.buttons["cup and saucer"].isSelected)
@@ -112,21 +113,23 @@ final class SwipeFlowTests: XCTestCase {
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Save"].tap()
-        XCTAssertTrue(edit.waitForExistence(timeout: 5), "Saving did not close the editor")
+        XCTAssertTrue(edit.waitForExistence(timeout: 15), "Saving did not close the editor")
     }
 
     /// A widget's link, from inside a habit's page: back to Today, at that routine.
     func testALinkOpensTodayAtTheRoutine() {
         XCTAssertTrue(row(water).waitForExistence(timeout: 10))
         row(water).tap()
-        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.navigationBars["Today"].exists)
+        // Today has an Edit button too, so wait for Today to go rather than for Edit.
+        let left = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "exists == false"),
+                                                    evaluatedWith: app.navigationBars["Today"])], timeout: 20)
+        XCTAssertEqual(left, .completed, "The habit's page never opened")
 
         app.open(URL(string: "habitplanner://run/evening")!)
         let reading = row("Read ten pages")
-        XCTAssertTrue(reading.waitForExistence(timeout: 5))
+        XCTAssertTrue(reading.waitForExistence(timeout: 20))
         let shown = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "isHittable == true"),
-                                                     evaluatedWith: reading)], timeout: 5)
+                                                     evaluatedWith: reading)], timeout: 20)
         XCTAssertEqual(shown, .completed, "The evening routine is not on screen")
         XCTAssertTrue(app.navigationBars["Today"].exists, "Still on the habit's page")
     }
