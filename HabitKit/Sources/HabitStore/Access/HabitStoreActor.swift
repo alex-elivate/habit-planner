@@ -328,9 +328,9 @@ public actor HabitStoreActor {
         var byID: [String: StoredRoutineStep] = [:]
         for step in row.steps ?? [] {
             if let kept = byID[step.stepID] {
-                // Keep whichever knows more. A nil clock is "not reached yet", so a row
-                // carrying an end time is strictly better informed than one that is not.
-                if kept.endedAt == nil, step.endedAt != nil { kept.update(from: step.toDomain()) }
+                // Keep what either knows. A nil clock is "not reached yet", so no known clock
+                // is replaced by an unknown one, and the latest reopen survives.
+                kept.update(from: kept.toDomain().merged(with: step.toDomain()))
                 step.run = nil
                 modelContext.delete(step)
             } else {
@@ -341,7 +341,13 @@ public actor HabitStoreActor {
         for step in run.steps {
             let stepID = StoredRoutineStep.stepID(runID: run.id, habitID: step.habitID)
             if let existingStep = byID[stepID] {
-                existingStep.update(from: step)
+                // Merged, not overwritten. The caller's copy of the run can be older than the
+                // stored one: a report from the watch, or a write from a device that has not
+                // yet heard of a reopen through iCloud. Overwriting let either undo it.
+                // The position is the writer's, as before: only the clocks are merged.
+                var merged = existingStep.toDomain().merged(with: step)
+                merged.position = step.position
+                existingStep.update(from: merged)
             } else {
                 let new = StoredRoutineStep(step, runID: run.id)
                 new.run = row

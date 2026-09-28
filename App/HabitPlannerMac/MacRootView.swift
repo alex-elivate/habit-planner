@@ -16,7 +16,6 @@ struct MacRootView: View {
 
     @State private var page: Page? = .routine(.morning)
     @State private var path: [UUID] = []
-    @State private var running: RoutineSlot?
     @State private var firstLaunch = false
 
     var body: some View {
@@ -47,7 +46,7 @@ struct MacRootView: View {
                 Group {
                     switch page {
                     case .routine(let routine):
-                        MacRoutineView(routine: routine, start: { running = $0 })
+                        MacRoutineView(routine: routine)
                     case .lockIn:
                         LockInView()
                     case .rates:
@@ -60,9 +59,6 @@ struct MacRootView: View {
                 }
                 .navigationDestination(for: UUID.self) { HabitReportView(habitID: $0) }
             }
-        }
-        .sheet(item: $running, onDismiss: { Task { await model.reload() } }) { routine in
-            MacRunnerView(routine: routine)
         }
         // First launch, as on the phone.
         .sheet(isPresented: $firstLaunch) {
@@ -83,15 +79,15 @@ struct MacRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.reload() } }
         }
-        // Siri, the Routine menu and a widget all arrive here.
+        // Siri, the Routine menu and a widget all arrive here, and open that routine's page.
         .onChange(of: router.requestedRoutine, initial: true) { _, routine in
             guard let routine else { return }
             router.requestedRoutine = nil
-            running = routine
+            show(routine)
         }
         .onOpenURL { url in
             guard let routine = WidgetLink.routine(from: url) else { return }
-            running = routine
+            show(routine)
         }
         // A new page starts from its own root, not from a habit opened under another.
         .onChange(of: page) { path = [] }
@@ -102,8 +98,15 @@ struct MacRootView: View {
         }
         .onChange(of: SnapshotDriver.shared.page) { _, new in if let new { page = new } }
         .onChange(of: SnapshotDriver.shared.path) { _, new in path = new }
-        .onChange(of: SnapshotDriver.shared.running) { _, new in running = new }
         #endif
+    }
+}
+
+extension MacRootView {
+    private func show(_ routine: RoutineSlot) {
+        page = .routine(routine)
+        path = []
+        Task { await model.reload() }
     }
 }
 
@@ -130,25 +133,20 @@ struct TodaySummary: View {
     }
 }
 
-/// One routine: start it, see its habits in order, reorder them, and add or plan the next.
+/// One routine: its habits in order, done or skipped with a swipe or from the context menu,
+/// reordered, and the next one added or planned.
 struct MacRoutineView: View {
     @Environment(AppModel.self) private var model
     let routine: RoutineSlot
-    let start: (RoutineSlot) -> Void
 
     @State private var adding = false
 
     var body: some View {
         List {
-            RoutineSection(routine: routine, start: start, add: { adding = true })
+            RoutineSection(routine: routine, add: { adding = true })
         }
         .navigationTitle(routine.title)
         .toolbar {
-            ToolbarItem {
-                Button("Start", systemImage: "play.fill") { start(routine) }
-                    .disabled(!model.hasWorkRemaining(in: routine))
-                    .help("Start the \(routine.title.lowercased()) routine")
-            }
             ToolbarItem {
                 Button("Add Habit", systemImage: "plus") { adding = true }
                     .disabled(!model.gate(for: routine).isOpen)

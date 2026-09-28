@@ -67,7 +67,7 @@ public enum CloudKitSchemaPriming {
         let step = StoredRoutineStep(
             stepID: StoredRoutineStep.stepID(runID: runID, habitID: habitID),
             habitID: habitID, runID: runID, position: 0,
-            startedAt: instant, endedAt: instant, run: run, payloadJSON: "{}"
+            startedAt: instant, endedAt: instant, reopenedAt: instant, run: run, payloadJSON: "{}"
         )
 
         return PrimingRecords(
@@ -83,6 +83,8 @@ public enum CloudKitSchemaPriming {
                 scheduleDayMask: StoredSchedule.validMask,
                 completionSourceRaw: CompletionSource.automatic.rawValue,
                 startedOnRaw: day.rawValue,
+                symbolName: "schema priming",
+                tintRaw: "schema priming",
                 payloadJSON: "{}"
             ),
             completion: StoredCompletionEvent(

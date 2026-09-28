@@ -85,3 +85,81 @@ extension HabitStoreActor {
         )
     }
 }
+
+/// What a swipe in the list does to one habit.
+public enum ListAction: Hashable, Sendable {
+    /// Done. `occurredAt` is set when Health proposed it and the person confirmed.
+    case complete(occurredAt: Date? = nil)
+    case skip
+    /// Undoes whichever of the two was done: retracts a completion and reopens its step.
+    case reopen
+}
+
+extension HabitStoreActor {
+
+    /// Applies a swipe from the list to `habitID`, on `day`. Returns whether anything changed.
+    ///
+    /// `day` is the day the list was folded for, as for the old checkbox. In the minutes
+    /// between midnight and the next reload it differs from the clock's day, and a swipe must
+    /// land on the day the row shows.
+    ///
+    /// Plans the same `RoutineRunner` the widget and Siri use, so a habit done or skipped here
+    /// is passed on today's run and the next habit is the same everywhere. A skipped habit can
+    /// still be done, which records the completion and leaves its step as it was.
+    ///
+    /// Writes the completion before the run, as `completeCurrentStep` does.
+    @discardableResult
+    public func apply(
+        _ action: ListAction,
+        to habitID: UUID,
+        on day: DayKey,
+        at instant: Date,
+        timeZone: TimeZone
+    ) throws -> Bool {
+        let histories = try loadHistories(today: day).values
+        guard let history = histories.first(where: { $0.habit.id == habitID }) else { return false }
+        let routine = history.habit.routine
+        let existing = try loadRoutineRuns().values.first { $0.routine == routine && $0.dayKey == day }
+        // Opened on the list's day rather than the clock's, for the reason above.
+        let run = existing ?? RoutineRun(routine: routine, dayKey: day, startedAt: instant,
+                                         timeZoneIdentifier: timeZone.identifier)
+        var runner = RoutineRunner(routine: routine, histories: histories, resuming: run,
+                                   at: instant, in: timeZone)
+
+        switch action {
+        case .complete(let occurredAt):
+            guard history.isDueToday, !history.isCompletedToday else { return false }
+            let source: CompletionSource = occurredAt == nil ? .manual : .automatic
+            if let event = runner.complete(habitID, at: instant, occurredAt: occurredAt, source: source) {
+                try record(event)
+                try upsert(runner.run)
+            } else {
+                // Skipped earlier today. The step stays passed, and the habit is now done.
+                try record(CompletionEvent(habitID: habitID, dayKey: day, source: source,
+                                           occurredAt: occurredAt ?? instant, recordedAt: instant,
+                                           timeZoneIdentifier: timeZone.identifier))
+            }
+            return true
+
+        case .skip:
+            guard runner.remaining.contains(habitID) else { return false }
+            runner.skip(habitID, at: instant)
+            try upsert(runner.run)
+            return true
+
+        case .reopen:
+            var changed = false
+            if history.isCompletedToday {
+                try retract(habitID: habitID, dayKey: day, at: instant,
+                            timeZoneIdentifier: timeZone.identifier)
+                changed = true
+            }
+            // Only a stored run can have a step to reopen.
+            if var stored = existing, stored.reopen(habitID, at: instant) {
+                try upsert(stored)
+                changed = true
+            }
+            return changed
+        }
+    }
+}

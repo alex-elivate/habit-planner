@@ -9,16 +9,16 @@ struct RootView: View {
     @Environment(HealthService.self) private var health
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var running: RoutineSlot?
+    /// The routine a reminder, the widget or Siri asked for.
+    @State private var focus: RoutineSlot?
+    @State private var path = NavigationPath()
 
     var body: some View {
         @Bindable var model = model
-        NavigationStack {
-            TodayView(start: { running = $0 })
+        NavigationStack(path: $path) {
+            TodayView(focus: $focus)
         }
-        .fullScreenCover(item: $running, onDismiss: refresh) { routine in
-            RunnerView(routine: routine)
-        }
+        .environment(\.healthMatch, HealthMatch(find: healthMatch))
         .alert("Something went wrong", isPresented: Binding(
             get: { model.failure != nil }, set: { if !$0 { model.failure = nil } }
         )) {
@@ -38,17 +38,31 @@ struct RootView: View {
         .onChange(of: router.requestedRoutine, initial: true) { _, routine in
             guard let routine else { return }
             router.requestedRoutine = nil
-            running = routine
+            show(routine)
         }
         // A widget tap. It can only ask for a routine, so that is all this reads from it.
         .onOpenURL { url in
             guard let routine = WidgetLink.routine(from: url) else { return }
-            running = routine
+            show(routine)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             // Midnight, a time zone change, or a clock change. Today may be a different day.
             refresh()
         }
+    }
+
+    /// Back to Today, scrolled to `routine`, with what the store says now.
+    private func show(_ routine: RoutineSlot) {
+        path = NavigationPath()
+        focus = routine
+        refresh()
+    }
+
+    /// The first time Health shows for a linked habit today, if it does.
+    private func healthMatch(_ habitID: UUID) async -> Date? {
+        guard let binding = model.bindings[habitID] else { return nil }
+        let interval = DateInterval(start: model.today.start(in: model.timeZone), end: .now)
+        return try? await health.signalInstants(for: binding, in: interval).first
     }
 
     private func refresh() {

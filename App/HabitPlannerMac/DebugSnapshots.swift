@@ -17,7 +17,6 @@ final class SnapshotDriver {
 
     var page: MacRootView.Page?
     var path: [UUID] = []
-    var running: RoutineSlot?
     var adding = false
 
     func run(model: AppModel) async {
@@ -36,11 +35,6 @@ final class SnapshotDriver {
             try? summary.joined(separator: "\n").write(to: directory.appending(path: "1-sidebar.txt"),
                                                       atomically: true, encoding: .utf8)
         }
-
-        running = .morning
-        await snap("2-runner", in: directory)
-        running = nil
-        try? await Task.sleep(for: .seconds(1))
 
         adding = true
         await snap("2-editor", in: directory)

@@ -95,6 +95,8 @@ public final class StoredRoutineStep {
 
     public var startedAt: Date?
     public var endedAt: Date?
+    /// See `RoutineStep.reopenedAt`.
+    public var reopenedAt: Date?
 
     /// The inverse side of the relationship. Optional, as CloudKit requires.
     public var run: StoredRoutineRun?
@@ -109,6 +111,7 @@ public final class StoredRoutineStep {
         position: Int = 0,
         startedAt: Date? = nil,
         endedAt: Date? = nil,
+        reopenedAt: Date? = nil,
         run: StoredRoutineRun? = nil,
         schemaVersion: Int = HabitSchemaV1.versionIdentifier.major,
         payloadJSON: String? = nil
@@ -119,6 +122,7 @@ public final class StoredRoutineStep {
         self.position = position
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.reopenedAt = reopenedAt
         self.run = run
         self.schemaVersion = schemaVersion
         self.payloadJSON = payloadJSON

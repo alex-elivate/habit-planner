@@ -170,43 +170,29 @@ final class AppModel: RoutineActing {
     /// the first load.
     var isEmpty: Bool { !mode.isSeeded && hasLoaded && histories.isEmpty && unreadable.isEmpty }
 
-    /// Whether `routine` has anything left to run today.
-    func hasWorkRemaining(in routine: RoutineSlot) -> Bool {
-        RoutineRunner(routine: routine, histories: histories, resuming: runsToday[routine],
-                      at: .now, in: timeZone).isFinished == false
+    /// Where each habit in `routine` stands today. See `StepState`.
+    func states(in routine: RoutineSlot) -> [UUID: StepState] {
+        RoutineRunner.states(of: routine, histories: histories, run: runsToday[routine],
+                             at: .now, in: timeZone)
     }
 
     // MARK: - Completions
 
-    /// Ticks or un-ticks the day the row shows. Un-ticking appends a retraction.
+    /// Applies a swipe from the list. See `HabitStoreActor.apply`.
     ///
-    /// Both directions write to the day the row was folded for, not to a day worked out from
-    /// the clock. In the minutes between midnight and the next reload the two differ, and a
-    /// tick landing on a different day from the un-tick beside it would be a correction that
-    /// corrects nothing.
-    func toggleToday(_ habitID: UUID) async {
-        guard let history = history(for: habitID), history.isDueToday else { return }
-        let day = history.today
-        let now = Date.now
-        await write {
-            if history.isCompletedToday {
-                try await store.retract(habitID: habitID, dayKey: day, at: now,
-                                        timeZoneIdentifier: timeZone.identifier)
-            } else {
-                try await store.record(CompletionEvent(habitID: habitID, dayKey: day, occurredAt: now,
-                                                       timeZoneIdentifier: timeZone.identifier))
-            }
-        }
-    }
-
-    /// Records an assertion. Returns whether it reached the store.
+    /// Writes to the day the row was folded for, not to a day worked out from the clock. In the
+    /// minutes between midnight and the next reload the two differ, and a swipe landing on a
+    /// different day from the row it was made on would correct nothing.
+    /// Returns whether the swipe changed anything.
     @discardableResult
-    func record(_ event: CompletionEvent) async -> Bool {
-        await write { try await store.record(event) }
-    }
-
-    func save(_ run: RoutineRun) async {
-        await write { try await store.upsert(run) }
+    func apply(_ action: ListAction, to habitID: UUID) async -> Bool {
+        guard let day = history(for: habitID)?.today else { return false }
+        let now = Date.now
+        var changed = false
+        await write {
+            changed = try await store.apply(action, to: habitID, on: day, at: now, timeZone: timeZone)
+        }
+        return changed
     }
 
     // MARK: - Habits
@@ -246,7 +232,9 @@ final class AppModel: RoutineActing {
             routine: draft.routine,
             order: nextOrder,
             schedule: draft.schedule,
-            startedOn: today
+            startedOn: today,
+            symbolName: draft.symbolName,
+            tint: draft.tint
         )
         let added = await write { try await store.upsert(habit) }
         // The plan is used up once the habit it named exists. A different habit added in its
@@ -318,6 +306,8 @@ final class AppModel: RoutineActing {
         habit.twoMinuteVersion = draft.twoMinuteVersion.nilIfBlank
         habit.identityStatement = draft.identityStatement.nilIfBlank
         habit.schedule = draft.schedule
+        habit.symbolName = draft.symbolName
+        habit.tint = draft.tint
         await write { try await store.upsert(habit) }
     }
 
@@ -356,7 +346,7 @@ final class AppModel: RoutineActing {
         habit.completionSource = .automatic
         // Reconciled through yesterday, so the link day itself is covered once it settles. A
         // walk the morning the habit was linked is still that habit's walk, and starting at
-        // today would lose it for good if the runner was not opened that day.
+        // today would lose it for good if it was not counted that day.
         let binding = HealthBinding(habitID: habitID, signal: signal,
                                     externalIdentifier: externalIdentifier,
                                     lastReconciledDay: today.advanced(by: -1))
@@ -411,6 +401,9 @@ struct HabitDraft: Equatable {
     var identityStatement = ""
     var routine: RoutineSlot = .morning
     var schedule: Schedule = .daily
+    /// `nil` until the person picks one, so the suggestion can follow the title as it is typed.
+    var symbolName: String?
+    var tint: HabitTint?
 
     init(routine: RoutineSlot = .morning) {
         self.routine = routine
@@ -423,6 +416,8 @@ struct HabitDraft: Equatable {
         identityStatement = habit.identityStatement ?? ""
         routine = habit.routine
         schedule = habit.schedule
+        symbolName = habit.symbolName
+        tint = habit.tint
     }
 
     var isValid: Bool {

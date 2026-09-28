@@ -27,15 +27,68 @@ public struct RoutineStep: Identifiable, Hashable, Codable, Sendable {
     /// When the step was presented. `nil` until it is reached.
     public var startedAt: Date?
 
-    /// When the person moved past it. `nil` while it is still on screen, and on a routine
-    /// abandoned midway, which is a normal and expected shape.
+    /// When the person last moved past it. `nil` until they do, and on a routine abandoned
+    /// midway, which is a normal and expected shape. A reopened step keeps its old end, so
+    /// read `isPassed` to know whether it is passed now.
     public var endedAt: Date?
 
-    public init(habitID: UUID, position: Int, startedAt: Date? = nil, endedAt: Date? = nil) {
+    /// When the person last put the step back: Unskip or Not done in the list, or Back in the
+    /// watch's runner. `nil` if it never was.
+    ///
+    /// A reopen is its own clock rather than a cleared `endedAt`, because every copy of a run
+    /// merges by keeping the latest end. Clearing it was undone by the next stale copy to
+    /// arrive, from the watch or from another device through iCloud. With both clocks kept at
+    /// their latest, whichever happened last wins on every device. See `isPassed`.
+    public var reopenedAt: Date?
+
+    public init(habitID: UUID, position: Int, startedAt: Date? = nil, endedAt: Date? = nil,
+                reopenedAt: Date? = nil) {
         self.habitID = habitID
         self.position = position
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.reopenedAt = reopenedAt
+    }
+
+    /// Whether the person has moved past this step: it ended, and not before it was last put
+    /// back. The one reading of the two clocks. Nothing else compares them.
+    ///
+    /// Clocks from two devices are compared as they are. If one runs minutes fast, a pass it
+    /// recorded can outrank a reopen that really came later. The clamps in `pass(at:)` and
+    /// `reopen(at:)` order only clocks this device has already seen. The 1 ms step they add
+    /// survives CloudKit's millisecond precision.
+    public var isPassed: Bool {
+        guard let endedAt else { return false }
+        guard let reopenedAt else { return true }
+        return endedAt > reopenedAt
+    }
+
+    /// Ends the step at `instant`, or just after its last reopen if the clock says earlier.
+    /// Another device's clock can run ahead, and a pass must never read as older than the
+    /// reopen it follows.
+    mutating func pass(at instant: Date) {
+        if startedAt == nil { startedAt = instant }
+        endedAt = reopenedAt.map { max(instant, $0.addingTimeInterval(0.001)) } ?? instant
+    }
+
+    /// Puts the step back at `instant`, or at its end if the clock says earlier, for the same
+    /// reason as `pass(at:)`.
+    mutating func reopen(at instant: Date) {
+        reopenedAt = endedAt.map { max(instant, $0) } ?? instant
+    }
+
+    /// Two copies of the same step combined: the earliest start, the latest end, the latest
+    /// reopen and the lowest position. Commutative, associative and idempotent, so copies
+    /// arriving in any order settle on one answer.
+    public func merged(with other: RoutineStep) -> RoutineStep {
+        precondition(habitID == other.habitID, "Merging a step for another habit")
+        return RoutineStep(
+            habitID: habitID,
+            position: Swift.min(position, other.position),
+            startedAt: earliest(startedAt, other.startedAt),
+            endedAt: latest(endedAt, other.endedAt),
+            reopenedAt: latest(reopenedAt, other.reopenedAt)
+        )
     }
 
     /// How long the step took, or `nil` if it never finished.
@@ -113,9 +166,35 @@ public struct RoutineRun: Identifiable, Hashable, Codable, Sendable {
         }
     }
 
+    /// Puts a passed step back, so a runner planned from this run offers the habit again.
+    ///
+    /// The list's Unskip, half of its Not done, and the watch runner's Back. Returns whether
+    /// anything changed. The run is reopened too, since it now has a step to come back to.
+    /// Carried across devices by `RoutineStep.reopenedAt`.
+    @discardableResult
+    public mutating func reopen(_ habitID: UUID, at instant: Date) -> Bool {
+        guard let index = steps.firstIndex(where: { $0.habitID == habitID }),
+              steps[index].isPassed else { return false }
+        steps[index].reopen(at: instant)
+        endedAt = nil
+        return true
+    }
+
     /// Wall-clock length of the whole run, or `nil` if it never finished.
     public var duration: TimeInterval? {
         guard let startedAt, let endedAt, endedAt >= startedAt else { return nil }
         return endedAt.timeIntervalSince(startedAt)
     }
+}
+
+func earliest(_ lhs: Date?, _ rhs: Date?) -> Date? {
+    guard let lhs else { return rhs }
+    guard let rhs else { return lhs }
+    return Swift.min(lhs, rhs)
+}
+
+func latest(_ lhs: Date?, _ rhs: Date?) -> Date? {
+    guard let lhs else { return rhs }
+    guard let rhs else { return lhs }
+    return Swift.max(lhs, rhs)
 }

@@ -82,7 +82,7 @@ final class MacLaunch {
     }
 }
 
-/// Carries a request to start a routine, from Siri, a widget or a menu, to the window.
+/// Carries a request to open a routine, from Siri, a widget or a menu, to the window.
 @Observable
 final class MacRouter {
     static let shared = MacRouter()
@@ -105,9 +105,9 @@ struct MacCommands: Commands {
         // for adding a habit.
         CommandGroup(replacing: .newItem) {}
         CommandMenu("Routine") {
-            Button("Start Morning Routine") { MacRouter.shared.requestedRoutine = .morning }
+            Button("Show Morning Routine") { MacRouter.shared.requestedRoutine = .morning }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Start Evening Routine") { MacRouter.shared.requestedRoutine = .evening }
+            Button("Show Evening Routine") { MacRouter.shared.requestedRoutine = .evening }
                 .keyboardShortcut("2", modifiers: .command)
         }
     }

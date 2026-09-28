@@ -61,7 +61,7 @@ public struct RoutineRunner: Sendable {
         let run = existing ?? RoutineRun(routine: routine, startingAt: instant, in: timeZone)
         precondition(run.routine == routine, "Resuming a \(run.routine) run as \(routine)")
 
-        let alreadyPassed = Set(run.steps.lazy.filter { $0.endedAt != nil }.map(\.habitID))
+        let alreadyPassed = Set(run.steps.lazy.filter(\.isPassed).map(\.habitID))
         let due = histories.filter { history in
             history.habit.routine == routine
                 && history.isDueToday
@@ -111,6 +111,22 @@ public struct RoutineRunner: Sendable {
         source: CompletionSource = .manual
     ) -> CompletionEvent? {
         guard let habitID = currentHabitID else { return nil }
+        return complete(habitID, at: instant, occurredAt: occurredAt, source: source)
+    }
+
+    /// Marks `habitID` done, wherever it sits among the habits not yet passed.
+    ///
+    /// For the list, where every habit is in reach. Doing one out of order is allowed, because
+    /// the list always allowed catching up, and it still leaves a step on the run so the record
+    /// of the morning is complete. The habit on offer stays on offer unless it was this one.
+    /// Returns `nil` if `habitID` has already been passed or was never due.
+    public mutating func complete(
+        _ habitID: UUID,
+        at instant: Date,
+        occurredAt: Date? = nil,
+        source: CompletionSource = .manual
+    ) -> CompletionEvent? {
+        guard remaining.contains(habitID) else { return nil }
         let event = CompletionEvent(
             habitID: habitID,
             dayKey: run.dayKey,
@@ -119,7 +135,7 @@ public struct RoutineRunner: Sendable {
             recordedAt: instant,
             timeZoneIdentifier: timeZone.identifier
         )
-        advance(outcome: .completed(event), at: instant)
+        pass(habitID, outcome: .completed(event), at: instant)
         return event
     }
 
@@ -129,8 +145,13 @@ public struct RoutineRunner: Sendable {
     /// what a skip is. Until then it is only unfinished, and the person can still tick it from
     /// the list.
     public mutating func skip(at instant: Date) {
-        guard currentHabitID != nil else { return }
-        advance(outcome: .skipped, at: instant)
+        guard let habitID = currentHabitID else { return }
+        skip(habitID, at: instant)
+    }
+
+    /// Moves past `habitID` without doing it, wherever it sits. See `complete(_:at:)`.
+    public mutating func skip(_ habitID: UUID, at instant: Date) {
+        pass(habitID, outcome: .skipped, at: instant)
     }
 
     /// Steps back to the habit just passed.
@@ -145,10 +166,8 @@ public struct RoutineRunner: Sendable {
         guard let last = passed.popLast() else { return nil }
 
         remaining.insert(last.habitID, at: 0)
+        run.reopen(last.habitID, at: instant)
         run.endedAt = nil
-        if let index = run.steps.firstIndex(where: { $0.habitID == last.habitID }) {
-            run.steps[index].endedAt = nil
-        }
 
         guard case .completed(let event) = last.outcome else { return nil }
         return event.retracted(at: instant)
@@ -156,17 +175,22 @@ public struct RoutineRunner: Sendable {
 
     // MARK: - Transitions
 
-    private mutating func advance(outcome: Outcome, at instant: Date) {
-        guard let habitID = remaining.first else { return }
-        if let index = run.steps.firstIndex(where: { $0.habitID == habitID }) {
-            run.steps[index].endedAt = instant
+    private mutating func pass(_ habitID: UUID, outcome: Outcome, at instant: Date) {
+        guard let index = remaining.firstIndex(of: habitID) else { return }
+        if let step = run.steps.firstIndex(where: { $0.habitID == habitID }) {
+            run.steps[step].pass(at: instant)
+        } else {
+            // Passed from the list before it came up. It took no time that anything measured.
+            let position = (run.steps.map(\.position).max() ?? -1) + 1
+            run.steps.append(RoutineStep(habitID: habitID, position: position,
+                                         startedAt: instant, endedAt: instant))
         }
-        remaining.removeFirst()
+        remaining.remove(at: index)
         passed.append((habitID, outcome))
 
         if remaining.isEmpty {
             run.endedAt = instant
-        } else {
+        } else if index == 0 {
             present(at: instant)
         }
     }

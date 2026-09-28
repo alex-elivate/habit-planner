@@ -211,7 +211,7 @@ struct RoutineRunnerTests {
 
         #expect(runner.currentHabitID == a.id)
         #expect(runner.remaining == [a.id, b.id])
-        #expect(runner.run.steps.first { $0.habitID == a.id }?.endedAt == nil)
+        #expect(runner.run.steps.first { $0.habitID == a.id }?.isPassed == false)
     }
 
     @Test("Undoing a skip writes nothing and reopens the step")

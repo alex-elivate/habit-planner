@@ -203,11 +203,11 @@ struct SchemaPrimingTests {
         // A field SwiftData never sees a value for does not exist in the development schema,
         // and is therefore permanently absent from production once promoted.
         let expected: [String: Set<String>] = [
-            "StoredHabit": ["cue", "twoMinuteVersion", "identityStatement", "payloadJSON"],
+            "StoredHabit": ["cue", "twoMinuteVersion", "identityStatement", "symbolName", "tintRaw", "payloadJSON"],
             "StoredCompletionEvent": ["payloadJSON"],
             "StoredLifecycleEvent": ["payloadJSON"],
             "StoredRoutineRun": ["startedAt", "endedAt", "steps", "payloadJSON"],
-            "StoredRoutineStep": ["startedAt", "endedAt", "run", "payloadJSON"],
+            "StoredRoutineStep": ["startedAt", "endedAt", "reopenedAt", "run", "payloadJSON"],
             "StoredPlannedHabit": ["payloadJSON"]
         ]
         #expect(optionalColumns() == expected)
@@ -224,6 +224,8 @@ struct SchemaPrimingTests {
         #expect(r.habit.cue != nil)
         #expect(r.habit.twoMinuteVersion != nil)
         #expect(r.habit.identityStatement != nil)
+        #expect(r.habit.symbolName != nil)
+        #expect(r.habit.tintRaw != nil)
         #expect(r.habit.payloadJSON != nil)
 
         #expect(r.completion.payloadJSON != nil)
@@ -235,6 +237,7 @@ struct SchemaPrimingTests {
 
         #expect(r.step.startedAt != nil)
         #expect(r.step.endedAt != nil)
+        #expect(r.step.reopenedAt != nil)
         #expect(r.step.run != nil)
         #expect(r.step.payloadJSON != nil)
 

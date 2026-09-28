@@ -4,11 +4,11 @@ import HabitKit
 import HabitStore
 
 // Every intent acts on the habit next in sequence and nothing else. There is no intent that
-// ticks a habit by name: the order is the product, in the runner, in the widget and here.
+// ticks a habit by name: the next habit is the same in the list, the widget and here.
 // A routine left out means the one for the time of day when acting, and the one the widgets
 // feature when only answering.
 
-/// Opens the runner on a routine.
+/// Opens the app on a routine: its list on the iPhone and the Mac, its runner on the watch.
 struct StartRoutineIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Routine"
     static let description = IntentDescription("Opens Habit Planner on a routine's next habit.")

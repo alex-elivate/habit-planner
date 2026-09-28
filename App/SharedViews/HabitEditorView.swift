@@ -28,6 +28,18 @@ struct HabitEditorView: View {
             Section {
                 TextField("Habit", text: $draft.title, prompt: Text("Stretch"))
                     .font(.headline)
+                NavigationLink {
+                    IconPickerView(symbolName: $draft.symbolName, tint: $draft.tint,
+                                   title: draft.title, routine: draft.routine)
+                } label: {
+                    HStack {
+                        Text("Icon")
+                        Spacer()
+                        HabitIconView(symbol: HabitIcons.symbol(draft.symbolName, title: draft.title,
+                                                                routine: draft.routine),
+                                      tint: draft.tint ?? .default(for: draft.routine), size: 32)
+                    }
+                }
             } footer: {
                 if case .new(let routine) = mode {
                     Text("Joins the end of your \(routine.title.lowercased()) routine. Drag to reorder later.")

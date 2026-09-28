@@ -52,6 +52,11 @@ public final class StoredHabit {
     /// array inside a widget extension under a tight memory budget. Mapping rejects it.
     public var startedOnRaw: Int = 0
 
+    /// The icon the person chose. Both are cosmetic, so a value this build cannot read falls
+    /// back to the suggestion rather than failing the record the way an unknown routine does.
+    public var symbolName: String?
+    public var tintRaw: String?
+
     // MARK: Escape hatches
 
     /// Which schema version wrote this record.
@@ -80,6 +85,8 @@ public final class StoredHabit {
         scheduleDayMask: Int = 0,
         completionSourceRaw: String = CompletionSource.manual.rawValue,
         startedOnRaw: Int = 0,
+        symbolName: String? = nil,
+        tintRaw: String? = nil,
         schemaVersion: Int = HabitSchemaV1.versionIdentifier.major,
         payloadJSON: String? = nil
     ) {
@@ -94,6 +101,8 @@ public final class StoredHabit {
         self.scheduleDayMask = scheduleDayMask
         self.completionSourceRaw = completionSourceRaw
         self.startedOnRaw = startedOnRaw
+        self.symbolName = symbolName
+        self.tintRaw = tintRaw
         self.schemaVersion = schemaVersion
         self.payloadJSON = payloadJSON
     }

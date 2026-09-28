@@ -157,7 +157,7 @@ It is the only thing kept, because everything else a reconciliation might want t
 derivable. A ledger of already-consumed health samples is unnecessary, since completion
 identifiers are content-addressed and re-reading the same day produces the identifier that is
 already there. Dose status and sample durations are unnecessary, since the app owns "done or
-not done" and measures its own durations from the routine runner. A binding is also per-device
+not done" and measures its own durations from its routine runs. A binding is also per-device
 in practice, because HealthKit authorization is per-device and macOS has no HealthKit at all.
 
 A completion the app writes after a health signal proposed it stays in the synced store. It is
@@ -273,18 +273,51 @@ to add an escape hatch is before the thing it protects is immutable.
 folder-synchronized groups, so adding a Swift file under `App/HabitPlanner/` needs no project
 edit. Identifiers live in one place, `AppIdentifiers.swift`.
 
-### The runner
+### The Today screen
 
-A routine shows one habit at a time. Done records a completion and moves on. Skip records
-nothing, so once the day settles it reads as a miss, and until then the habit can still be
-ticked from the list. Back returns to the step just passed and retracts it if it was done.
+On the iPhone and the Mac, every habit is done from the list. There is no separate runner
+screen. The watch keeps its one-habit runner, since a list you swipe through is harder to use
+on a screen that small.
 
-Whether a step was done or skipped is not stored on the run. The completion log already
-answers it, and a second copy would be one more thing that could disagree after a correction.
+- **Swipe right to do a habit.** Any habit due today can be done, in any order.
+- **Swipe left to skip it.** Skip records nothing about the habit, so once the day settles it
+  reads as a miss. Until then a skipped habit can still be done with a swipe right.
+- **Swipe a done habit left for Not done**, which retracts the completion. Swipe a skipped
+  habit left for **Unskip**. Both put the habit back where it was.
+- **Tap a habit** to open its details. On the Mac, right-click offers the same actions.
 
-Completions land on the run's day, so an evening routine that runs past midnight still counts
-for the evening it began. Closing mid-routine and reopening resumes at the first step not yet
-passed.
+The next habit in sequence has a ring round its icon. It is the one the widget's Done button
+and Siri tick, because the list, the widget and Siri all plan from the same `RoutineRunner`
+resuming today's run. `RoutineRunner.states` folds where each habit stands: done, skipped,
+next, waiting, or not due.
+
+Whether a habit was done or skipped is not stored on the run. The completion log says what was
+done, and a step the run passed without a completion was skipped. A second copy would be one
+more thing that could disagree after a correction.
+
+A swipe lands on the day the list was folded for, so a swipe in the minutes after midnight and
+before the next reload still counts for the day on screen. A habit done out of order still
+leaves a step on the run, with no duration.
+
+When a habit linked to Health is next, the app asks Health in the foreground whether it already
+happened today, and again each time the app comes back to the screen. If it did, the row shows the
+time, and a full swipe right counts it at that time. Nothing is counted until the person
+swipes. A shorter swipe still offers Done, which counts it now.
+
+A reminder, a widget tap, the Mac's Routine menu and "Start my morning routine in Habit Planner"
+open the app on Today at that routine.
+
+### Habit icons
+
+Each habit has an icon and a colour, chosen in the habit's editor from a fixed set. Both are
+stored on the habit and sync, because they are the person's choice and nothing else could say
+which picture they wanted. They are the only cosmetic fields in the schema.
+
+Until the person picks, the icon is suggested from words in the title, such as "water" or
+"read", or from the routine when nothing matches. The suggestion is worked out each time and
+never stored, so renaming a habit updates it. A stored icon or colour that this build does not
+recognise, written by a newer build, shows the suggestion instead. It does not make the habit
+unreadable.
 
 ### Reminders
 
@@ -295,8 +328,9 @@ drops out once the routine is finished. Reminder times are a per-device preferen
 
 ### Apple Health
 
-A habit can be linked to a workout type or to one medication. When that habit comes up in the
-runner, the app queries Health in the foreground and offers to count it. The person confirms.
+A habit can be linked to a workout type or to one medication. When that habit is next on the
+Today screen, the app queries Health in the foreground and offers to count it. The person
+confirms.
 On launch, a backfill proposes completions for settled days the app was never opened, capped at
 seven days and never earlier than the day the link was made. It goes through `propose`, so a
 day somebody un-ticked stays un-ticked.
@@ -351,10 +385,13 @@ delivery already goes through: completions fold on `recordedAt`, lifecycle keeps
 decision. So a snapshot built before the phone heard about a tick on the watch cannot erase
 that tick, and a tick the phone has since undone arrives back as undone.
 
-Runs merge by `RoutineRun.merged(with:)`, which keeps the earliest start and the latest end of
-every step. A late copy with a step still open can therefore never reopen one the other device
-closed. The cost is that an undo in the runner does not carry across to the other device's
-copy of the run. The retraction it wrote does, so the habit still reads as not done everywhere.
+Runs merge by `RoutineRun.merged(with:)`, which keeps the earliest start, the latest end and
+the latest reopen of every step. A late copy with a step still open can therefore never reopen
+one the other device closed. An Unskip, a Not done, or Back on the watch is recorded as a
+reopen time rather than by clearing the end, so it survives the merge as well: a step counts as
+passed only when it ended after it was last reopened. The store's own writes merge a step the
+same way, so a device that has not yet heard of a reopen through iCloud cannot undo it by
+writing its older copy.
 
 Merging something the store already knows writes nothing. On the phone every rewritten row is a
 CloudKit upload, and a report arrives after every step of a watch routine.
@@ -378,7 +415,8 @@ sit in its replica for good, and anything sent back would reach CloudKit.
 ### Reminders
 
 The watch schedules none of its own. The phone's reminder is forwarded to the wrist when the
-phone is locked, and tapping it opens the watch runner on that routine.
+phone is locked, and tapping it opens the watch runner on that routine. The watch is the only
+device that still has a runner.
 
 ## Widgets and complications
 
@@ -412,9 +450,9 @@ evening, and a routine with nothing due gives way to one that has something. An 
 morning never comes back in the evening while the evening still has work, because by then it
 has been missed.
 
-### Tapping opens the runner
+### Tapping opens the routine
 
-A tap opens the app on the runner for the routine shown, through a `habitplanner://run/<routine>`
+A tap opens the app on the routine shown, through a `habitplanner://run/<routine>`
 link that carries nothing else. The home screen sizes also have a Done button, which ticks the
 current habit without opening anything. See [Siri and Shortcuts](#siri-and-shortcuts).
 
@@ -441,7 +479,7 @@ Three intents, on iPhone and watch, each with phrases Siri knows without setup:
 
 | Intent | Says | Does |
 |---|---|---|
-| Start Routine | "Start my morning routine in Habit Planner" | Opens the runner on that routine |
+| Start Routine | "Start my morning routine in Habit Planner" | Opens the app on that routine |
 | Mark Current Habit Done | "Mark my habit done in Habit Planner" | Ticks the habit next in sequence and says what follows |
 | What's Next | "What's next in Habit Planner" | Says the next habit and how many are left |
 
@@ -464,14 +502,14 @@ my morning routine". Siri runs a shortcut when you say its name.
 With a Mac and an iPhone in the same room, both may answer the same request. Siri picks which
 device responds, and the app has no part in that.
 
-A runner left open on screen follows a tick made elsewhere. When Siri or the widget ticks the
-habit it is showing, it plans again from the store and moves on.
+The watch's runner, left open on screen, follows a tick made elsewhere. When Siri or the widget
+ticks the habit it is showing, it plans again from the store and moves on.
 
 ### Only the current habit, never one by name
 
-No intent takes a habit as a parameter. Every one acts on the habit the runner would offer next,
-planned by the same `RoutineRunner` from the same fold, resuming today's run. A step skipped in
-the runner stays skipped. The sequence is the product, so Shortcuts gets no way around it.
+No intent takes a habit as a parameter. Every one acts on the habit marked next in the list,
+planned by the same `RoutineRunner` from the same fold, resuming today's run. A habit skipped in
+the list stays skipped. The sequence is the product, so Shortcuts gets no way around it.
 
 ### The widget's button runs in the app
 
@@ -493,7 +531,7 @@ Two things about that route were found on the iOS 26.5 simulator:
   `@Observable` value lazily when a scene first draws, and a background launch for an intent
   never draws one.
 
-### Intents write the way the runner does
+### Intents write the way the app does
 
 Each app registers a `RoutineActions` dependency at launch, over its own model. On the phone a
 tick goes through the syncing store and the usual reload, so the list, the widgets and the watch
@@ -566,7 +604,7 @@ the layout without automation permissions. The Mac UI tests in `HabitPlannerMacU
 someone at the machine to approve automation mode the first time.
 
 `WidgetCheck` puts the widget on a simulator's home screen, checks what it shows and that a tap
-opens the runner, and keeps screenshots in the result bundle. It runs the real syncing build and
+opens the app on that routine, and keeps screenshots in the result bundle. It runs the real syncing build and
 edits the home screen, so it is skipped unless asked for:
 
 ```bash
@@ -617,7 +655,7 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 |---|---|---|
 | 1 | HabitKit domain package | Done |
 | 2 | SwiftData persistence and CloudKit schema | Done |
-| 3 | iOS app and routine runner | Merged, awaiting device checks |
+| 3 | iOS app, Today screen swipes and habit icons | Merged, awaiting device checks. Swipes and icons on a branch |
 | 4 | watchOS app and sync bridge | Merged, awaiting device checks |
 | 5 | Widgets and watch complication | Merged, awaiting device checks |
 | 6 | App Intents, Siri, Shortcuts | Merged, awaiting device checks |

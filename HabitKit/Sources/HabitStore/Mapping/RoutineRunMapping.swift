@@ -15,20 +15,26 @@ extension StoredRoutineStep {
             runID: runID,
             position: step.position,
             startedAt: step.startedAt,
-            endedAt: step.endedAt
+            endedAt: step.endedAt,
+            reopenedAt: step.reopenedAt
         )
     }
 
     /// Overwrites the clock and the sequence position, never the identity.
+    ///
+    /// Callers pass a step already merged with this row's, see `HabitStoreActor.upsert(_:)`,
+    /// so a stale copy can never wind a clock back.
     public func update(from step: RoutineStep) {
         schemaVersion = HabitSchemaV1.versionIdentifier.major
         position = step.position
         startedAt = step.startedAt
         endedAt = step.endedAt
+        reopenedAt = step.reopenedAt
     }
 
     public func toDomain() -> RoutineStep {
-        RoutineStep(habitID: habitID, position: position, startedAt: startedAt, endedAt: endedAt)
+        RoutineStep(habitID: habitID, position: position, startedAt: startedAt, endedAt: endedAt,
+                    reopenedAt: reopenedAt)
     }
 }
 
