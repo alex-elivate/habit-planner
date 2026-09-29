@@ -33,7 +33,7 @@ final class WidgetCheck: XCTestCase {
         add(attachment)
     }
 
-    func testWidgetShowsTheRoutineAndOpensTheRunner() throws {
+    func testWidgetShowsTheRoutineAndOpensTheApp() throws {
         app.launch()
 
         // One morning habit, in the store the widget reads. A fresh install opens on setup.
@@ -70,14 +70,13 @@ final class WidgetCheck: XCTestCase {
                       "The widget never showed the habit")
         keep("home screen", springboard.screenshot())
 
-        // Tapping it opens the runner on the featured routine.
+        // Tapping it opens the app on Today, at the featured routine.
         let widget = springboard.otherElements["Habit Planner"].firstMatch
         XCTAssertTrue(widget.waitForExistence(timeout: 5))
         widget.tap()
-        let onScreen = app.staticTexts["runner.habit"]
-        XCTAssertTrue(onScreen.waitForExistence(timeout: 10), "The widget tap did not open the runner")
-        XCTAssertEqual(onScreen.label, "Drink water")
-        keep("runner", app.screenshot())
+        let habitRow = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Drink water")).firstMatch
+        XCTAssertTrue(habitRow.waitForExistence(timeout: 10), "The widget tap did not open the app on the routine")
+        keep("opened", app.screenshot())
 
         // The Done button ticks the habit without opening anything. It runs in the app's
         // process, so the tick has to show up in the widget and in the app's own list.
@@ -94,8 +93,9 @@ final class WidgetCheck: XCTestCase {
         keep("after done", springboard.screenshot())
 
         app.launch()
-        let row = app.buttons["Mark not done"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "The app's list does not show the tick")
+        let row = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "Drink water")).firstMatch
+        let ticked = expectation(for: NSPredicate(format: "value == 'Done'"), evaluatedWith: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [ticked], timeout: 10), .completed, "The app's list does not show the tick")
         keep("app after done", app.screenshot())
     }
 

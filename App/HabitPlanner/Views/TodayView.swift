@@ -3,13 +3,36 @@ import SwiftUI
 
 struct TodayView: View {
     @Environment(AppModel.self) private var model
-    let start: (RoutineSlot) -> Void
+    /// A routine a reminder, the widget or Siri asked for. Scrolled to, then cleared.
+    @Binding var focus: RoutineSlot?
 
     @State private var adding: RoutineSlot?
     @State private var showingSettings = false
     @State private var firstLaunch = false
 
     var body: some View {
+        ScrollViewReader { proxy in
+            list
+                // Held until the first load, so a cold launch from a widget scrolls to rows
+                // that exist rather than to where they will be.
+                .onChange(of: focus, initial: true) { scroll(proxy) }
+                .onChange(of: model.hasLoaded) { scroll(proxy) }
+        }
+    }
+
+    /// Scrolls to the routine asked for, with any sheet over Today closed first.
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let routine = focus, model.hasLoaded else { return }
+        focus = nil
+        adding = nil
+        showingSettings = false
+        // A row, not the section. A list scrolls to rows reliably and to sections not at all.
+        let target: AnyHashable = model.habits(in: routine).first.map { AnyHashable($0.habit.id) }
+            ?? AnyHashable(AddHabitRow.scrollID(routine))
+        withAnimation { proxy.scrollTo(target, anchor: .top) }
+    }
+
+    private var list: some View {
         List {
             Section {
                 TodaySummary(progress: ScoreEngine.todayProgress(for: model.histories),
@@ -19,7 +42,7 @@ struct TodayView: View {
             }
 
             ForEach(RoutineSlot.allCases) { routine in
-                RoutineSection(routine: routine, start: start, add: { adding = routine })
+                RoutineSection(routine: routine, add: { adding = routine })
             }
 
             if !model.archived.isEmpty {

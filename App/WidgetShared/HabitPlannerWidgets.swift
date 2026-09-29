@@ -11,8 +11,8 @@ struct HabitPlannerWidgets: WidgetBundle {
 
 /// The routine at a glance: the next habit, today's progress, and what the routine unlocks next.
 ///
-/// Read only. Tapping opens the runner on the routine shown, and ticking a habit from the
-/// widget itself waits for App Intents in Phase 6.
+/// Tapping opens the app on the routine shown. The Done button ticks the next habit without
+/// opening anything.
 struct GlanceWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetLink.glanceKind, provider: GlanceProvider()) { entry in

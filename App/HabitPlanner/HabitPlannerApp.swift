@@ -116,7 +116,7 @@ final class Router {
     /// One per process. Siri's Start Routine reaches it from outside the view tree.
     static let shared = Router()
 
-    /// The routine a reminder asked to start. The root view presents it and clears this.
+    /// The routine a reminder asked to show. The root view scrolls to it and clears this.
     var requestedRoutine: RoutineSlot?
 }
 

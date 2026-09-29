@@ -1,81 +1,184 @@
 import HabitKit
+import HabitStore
 import SwiftUI
 
+/// Asks when Health shows a linked habit already happened today. Set on the iPhone, the only
+/// device that reads Health.
+struct HealthMatch: Equatable {
+    let find: @MainActor (UUID) async -> Date?
+
+    /// One per app, reading the model it was made with, so any two are the same. Comparing
+    /// equal keeps the environment from redrawing every row when the root view redraws.
+    static func == (lhs: HealthMatch, rhs: HealthMatch) -> Bool { true }
+}
+
+extension EnvironmentValues {
+    @Entry var healthMatch: HealthMatch?
+}
+
+/// One routine on the Today screen. Every habit is done, skipped, or undone from here.
+///
+/// Swipe right to do a habit, left to skip it. Any habit due today can be done, in any order,
+/// and the next one in sequence is marked, since that is the one the widget and Siri tick.
 struct RoutineSection: View {
     @Environment(AppModel.self) private var model
     let routine: RoutineSlot
-    let start: (RoutineSlot) -> Void
     let add: () -> Void
 
     var body: some View {
         let habits = model.habits(in: routine)
+        let states = model.states(in: routine)
+        let due = states.values.filter { $0 != .notDue }.count
+        let done = states.values.filter { $0 == .done }.count
         Section {
-            if !habits.isEmpty { startButton }
-
             ForEach(habits, id: \.habit.id) { history in
-                NavigationLink(value: history.habit.id) {
-                    HabitRow(history: history)
-                }
+                HabitListRow(history: history, state: states[history.habit.id] ?? .notDue)
             }
             .onMove { source, destination in
                 Task { await model.move(in: routine, from: source, to: destination) }
             }
 
             AddHabitRow(routine: routine, add: add)
+                .id(AddHabitRow.scrollID(routine))
         } header: {
-            Label(routine.title, systemImage: routine.symbol)
+            HStack {
+                Label(routine.title, systemImage: routine.symbol)
+                Spacer()
+                if due > 0 {
+                    Text(done == due ? "All done" : "\(done) of \(due)")
+                        .monospacedDigit()
+                        .accessibilityLabel(done == due ? "All done" : "\(done) of \(due) done")
+                }
+            }
+        }
+    }
+}
+
+/// One habit on Today, with its swipes. Tapping opens the habit.
+struct HabitListRow: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.healthMatch) private var healthMatch
+    @Environment(\.scenePhase) private var scenePhase
+    let history: HabitHistory
+    let state: StepState
+
+    /// What Health reported for this habit, and on which day, so an answer from another day
+    /// is never offered.
+    @State private var match: (day: DayKey, at: Date)?
+    /// Counts this row's own completions, so the haptic answers a swipe here and not a tick
+    /// that arrived from the watch, iCloud or the widget.
+    @State private var completedHere = 0
+
+    var body: some View {
+        NavigationLink(value: history.habit.id) {
+            HabitRow(history: history, state: state, offer: offer)
+        }
+        .accessibilityValue(HabitRow.label(for: state, history: history))
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            // With a Health match, the full swipe counts it at Health's time, since that is
+            // when it happened. Done now stays one step further in.
+            if let offer {
+                action(.complete(occurredAt: offer), "Count it", "heart.text.square").tint(.pink)
+            }
+            if state.canComplete {
+                action(.complete(), "Done", "checkmark").tint(.green)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            trailingAction
+        }
+        .contextMenu {
+            if let offer { action(.complete(occurredAt: offer), "Count it", "heart.text.square") }
+            if state.canComplete { action(.complete(), "Done", "checkmark") }
+            trailingAction
+        }
+        .sensoryFeedback(.success, trigger: completedHere)
+        // Asked while the person is looking, which answers at once, unlike background
+        // delivery. Again on coming back to the app, which is when a dose has usually just
+        // been logged. An offer is only an offer: nothing is counted until it is chosen.
+        .task(id: HealthCheck(habitID: history.habit.id, day: history.today,
+                              isNext: state == .next, isActive: scenePhase == .active)) {
+            match = nil
+            guard state == .next, scenePhase == .active, let healthMatch,
+                  model.bindings[history.habit.id] != nil else { return }
+            let day = history.today
+            guard let found = await healthMatch.find(history.habit.id), !Task.isCancelled else { return }
+            match = (day, found)
         }
     }
 
-    @ViewBuilder private var startButton: some View {
-        let run = model.runsToday[routine]
-        let remaining = model.hasWorkRemaining(in: routine)
-        Button {
-            start(routine)
-        } label: {
-            HStack {
-                Image(systemName: remaining ? "play.fill" : "checkmark")
-                Text(!remaining ? "Done for today" : (run?.startedAt != nil ? "Resume" : "Start \(routine.title.lowercased()) routine"))
-                    .fontWeight(.semibold)
-                Spacer()
+    private struct HealthCheck: Hashable {
+        let habitID: UUID
+        let day: DayKey
+        let isNext: Bool
+        let isActive: Bool
+    }
+
+    private var offer: Date? {
+        guard state.canComplete, let match, match.day == history.today else { return nil }
+        return match.at
+    }
+
+    /// Skip for a habit still to do, and the way back for one already passed.
+    @ViewBuilder
+    private var trailingAction: some View {
+        switch state {
+        case .next, .waiting: action(.skip, "Skip", "forward.fill").tint(.orange)
+        case .done: action(.reopen, "Not done", "arrow.uturn.backward").tint(.gray)
+        case .skipped: action(.reopen, "Unskip", "arrow.uturn.backward").tint(.gray)
+        case .notDue: EmptyView()
+        }
+    }
+
+    private func action(_ action: ListAction, _ title: String, _ symbol: String) -> some View {
+        Button(title, systemImage: symbol) {
+            Task {
+                let applied = await model.apply(action, to: history.habit.id)
+                if applied, case .complete = action { completedHere += 1 }
             }
         }
-        .disabled(!remaining)
+        .accessibilityIdentifier("\(title).\(history.habit.title)")
     }
 }
 
 struct HabitRow: View {
-    @Environment(AppModel.self) private var model
     let history: HabitHistory
+    let state: StepState
+    /// When Health shows this habit happened today, if it does and it is not yet counted.
+    var offer: Date?
 
     var body: some View {
         HStack(spacing: 12) {
-            if history.isDueToday {
-                Button {
-                    Task { await model.toggleToday(history.habit.id) }
-                } label: {
-                    Image(systemName: history.isCompletedToday ? "checkmark.circle.fill" : "circle")
-                        .font(.title2)
-                        .foregroundStyle(history.isCompletedToday ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(history.isCompletedToday ? "Mark not done" : "Mark done")
-            } else {
-                Image(systemName: history.currentState == .paused ? "pause.circle" : "moon.zzz")
-                    .font(.title2)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
+            HabitIconView(symbol: HabitIcons.symbol(for: history.habit),
+                          tint: HabitIcons.tint(for: history.habit), state: state)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(history.habit.title)
-                    .foregroundStyle(history.isDueToday ? .primary : .secondary)
+                    .fontWeight(state == .next ? .semibold : .regular)
+                    .foregroundStyle(state == .notDue || state == .skipped ? .secondary : .primary)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                if let offer {
+                    Label("Health shows it at \(offer.formatted(date: .omitted, time: .shortened)). Swipe right to count it.",
+                          systemImage: "heart.text.square")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.pink)
+                        .padding(.top, 2)
+                }
             }
             Spacer()
             if history.habit.completionSource == .automatic {
                 Image(systemName: "heart.text.square").foregroundStyle(.pink).accessibilityLabel("Linked to Health")
             }
+        }
+    }
+
+    static func label(for state: StepState, history: HabitHistory) -> String {
+        switch state {
+        case .done: "Done"
+        case .skipped: "Skipped"
+        case .next: "Next"
+        case .waiting: "To do"
+        case .notDue: history.currentState == .paused ? "Paused" : "Rest day"
         }
     }
 
@@ -85,8 +188,15 @@ struct HabitRow: View {
         case .archived: return "Archived"
         case .active: break
         }
-        if !history.isDueToday { return "Rest day" }
-        return history.streak.caption
+        switch state {
+        case .notDue: return "Rest day"
+        case .skipped: return "Skipped. You can still mark it done."
+        case .next:
+            if let small = history.habit.twoMinuteVersion { return "Next. Start with: \(small)" }
+            if let cue = history.habit.cue { return "Next. \(cue)" }
+            return "Next. \(history.streak.caption)"
+        case .done, .waiting: return history.streak.caption
+        }
     }
 }
 
@@ -107,6 +217,9 @@ struct AddHabitRow: View {
     let add: () -> Void
 
     @State private var settingUp = false
+
+    /// Where Today scrolls for a routine with no habits yet.
+    static func scrollID(_ routine: RoutineSlot) -> String { "add.\(routine.rawValue)" }
 
     var body: some View {
         switch model.gate(for: routine) {

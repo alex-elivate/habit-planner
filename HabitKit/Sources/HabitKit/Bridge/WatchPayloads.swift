@@ -150,10 +150,9 @@ extension RoutineRun {
     /// settle on one answer. The lessons from the completion fold apply unchanged: a merge whose
     /// result is stored and merged again has to give the same answer incrementally as in one go.
     ///
-    /// The cost is that an undo is not carried across. A step reopened on one device stays
-    /// closed in the other's copy of the run. The retraction the undo wrote still travels, so
-    /// the habit reads as not done everywhere and can be ticked from the list. Nothing scores
-    /// the run itself.
+    /// An undo travels as a later `reopenedAt` on the step, not as a cleared end, so it survives
+    /// the merge. See `RoutineStep.isPassed`. The run's own `endedAt` does not reopen this way,
+    /// and nothing decides anything from it.
     public func merged(with other: RoutineRun) -> RoutineRun {
         precondition(id == other.id, "Merging \(other.id) into \(id)")
 
@@ -163,12 +162,7 @@ extension RoutineRun {
                 byHabit[step.habitID] = step
                 continue
             }
-            byHabit[step.habitID] = RoutineStep(
-                habitID: step.habitID,
-                position: Swift.min(kept.position, step.position),
-                startedAt: earliest(kept.startedAt, step.startedAt),
-                endedAt: latest(kept.endedAt, step.endedAt)
-            )
+            byHabit[step.habitID] = kept.merged(with: step)
         }
 
         // The time zone of whichever copy started first, with the identifier breaking a tie,
@@ -193,16 +187,4 @@ extension RoutineRun {
             }
         )
     }
-}
-
-private func earliest(_ lhs: Date?, _ rhs: Date?) -> Date? {
-    guard let lhs else { return rhs }
-    guard let rhs else { return lhs }
-    return Swift.min(lhs, rhs)
-}
-
-private func latest(_ lhs: Date?, _ rhs: Date?) -> Date? {
-    guard let lhs else { return rhs }
-    guard let rhs else { return lhs }
-    return Swift.max(lhs, rhs)
 }

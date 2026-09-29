@@ -3,7 +3,7 @@ import HabitKit
 import SwiftUI
 import WidgetKit
 
-/// Every family, iPhone and watch. Tapping any of them opens the runner on the routine shown.
+/// Every family, iPhone and watch. Tapping any of them opens the app on the routine shown.
 struct GlanceView: View {
     @Environment(\.widgetFamily) private var family
     let entry: GlanceEntry
@@ -82,7 +82,7 @@ struct GlanceView: View {
 
 // MARK: - Pieces
 
-/// The routine's next habit and how far through today it is. The runner's first screen.
+/// The routine's next habit and how far through today it is.
 private struct NextHabitView: View {
     let routine: RoutineGlance
     /// Where the text leads, when the widget has more than one routine to link to. The Done

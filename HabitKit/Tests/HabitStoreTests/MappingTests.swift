@@ -210,3 +210,25 @@ struct MappingTests {
         #expect(throws: StoreMappingError.self) { try row.toDomain() }
     }
 }
+
+@Suite("Icon mapping")
+struct IconMappingTests {
+    @Test("An icon colour this build does not know reads as no choice, not as a bad record")
+    func unknownTint() throws {
+        let row = StoredHabit(habitID: UUID(), title: "x", startedOnRaw: referenceToday.rawValue,
+                              symbolName: "drop.fill", tintRaw: "ultraviolet")
+        let habit = try row.toDomain()
+        #expect(habit.tint == nil)
+        #expect(habit.symbolName == "drop.fill")
+    }
+
+    @Test("A habit from a newer phone with an unknown colour still decodes on the watch")
+    func unknownTintInPayload() throws {
+        let habit = Habit(title: "x", routine: .morning, order: 0, startedOn: referenceToday, tint: .blue)
+        var json = String(decoding: try JSONEncoder().encode(habit), as: UTF8.self)
+        json = json.replacingOccurrences(of: "\"blue\"", with: "\"ultraviolet\"")
+        let decoded = try JSONDecoder().decode(Habit.self, from: Data(json.utf8))
+        #expect(decoded.tint == nil)
+        #expect(decoded.id == habit.id)
+    }
+}

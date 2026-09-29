@@ -29,7 +29,9 @@ extension StoredHabit {
             scheduleKindRaw: schedule.kind.rawValue,
             scheduleDayMask: schedule.mask,
             completionSourceRaw: habit.completionSource.rawValue,
-            startedOnRaw: habit.startedOn.rawValue
+            startedOnRaw: habit.startedOn.rawValue,
+            symbolName: habit.symbolName,
+            tintRaw: habit.tint?.rawValue
         )
     }
 
@@ -50,6 +52,8 @@ extension StoredHabit {
         scheduleKindRaw = schedule.kind.rawValue
         scheduleDayMask = schedule.mask
         completionSourceRaw = habit.completionSource.rawValue
+        symbolName = habit.symbolName
+        tintRaw = habit.tint?.rawValue
     }
 
     public func toDomain() throws -> Habit {
@@ -92,7 +96,9 @@ extension StoredHabit {
             order: order,
             schedule: schedule,
             completionSource: source,
-            startedOn: startedOn
+            startedOn: startedOn,
+            symbolName: symbolName,
+            tint: tintRaw.flatMap(HabitTint.init(rawValue:))
         )
     }
 }

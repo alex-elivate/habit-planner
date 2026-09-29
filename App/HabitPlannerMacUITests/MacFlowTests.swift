@@ -1,9 +1,9 @@
 import XCTest
 
-/// Drives the Mac app against the seeded in-memory store: the runner, and each report page.
+/// Drives the Mac app against the seeded in-memory store: the routine list, and each report page.
 ///
-/// The rules are pinned in HabitKit. This checks the wiring on the Mac: that the runner writes
-/// and Back retracts, and that every page opens on real folded data. Screenshots of each page
+/// The rules are pinned in HabitKit. This checks the wiring on the Mac: that the list's actions
+/// write and undo, and that every page opens on real folded data. Screenshots of each page
 /// are kept, since what a report looks like is the point.
 final class MacFlowTests: XCTestCase {
     private var app: XCUIApplication!
@@ -26,32 +26,42 @@ final class MacFlowTests: XCTestCase {
         add(attachment)
     }
 
-    private var onScreen: XCUIElement { app.staticTexts["runner.habit"] }
-
-    private func expectOnScreen(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(onScreen.waitForExistence(timeout: 5), file: file, line: line)
-        let matched = expectation(for: NSPredicate(format: "value == %@ OR label == %@", title, title),
-                                  evaluatedWith: onScreen)
-        wait(for: [matched], timeout: 5)
+    private func row(_ title: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@ AND value != nil", title)).firstMatch
     }
 
-    func testRunnerDoneBackAndClose() {
-        let routine = app.buttons["Start morning routine"]
-        XCTAssertTrue(routine.waitForExistence(timeout: 10))
+    private func expect(_ title: String, reads value: String, file: StaticString = #filePath, line: UInt = #line) {
+        let met = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "value == %@", value),
+                                                   evaluatedWith: row(title))], timeout: 5)
+        XCTAssertEqual(met, .completed, "\(title) does not read \(value)", file: file, line: line)
+    }
+
+    /// Right-click, the Mac's way to reach what a swipe does.
+    private func choose(_ action: String, on title: String) {
+        row(title).rightClick()
+        let item = app.menuItems[action]
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "No \(action) for \(title)")
+        item.click()
+    }
+
+    func testDoneSkipAndUndoFromTheList() {
+        let water = "Drink a glass of water", stretch = "Stretch"
+        XCTAssertTrue(row(water).waitForExistence(timeout: 10))
         keep("routine")
-        routine.click()
+        expect(water, reads: "Next")
 
-        expectOnScreen("Drink a glass of water")
-        keep("runner")
-        app.buttons["Done"].click()
-        expectOnScreen("Stretch")
-        app.buttons["Back"].click()
-        expectOnScreen("Drink a glass of water")
-        app.sheets.firstMatch.buttons["Close"].firstMatch.click()
+        choose("Done", on: water)
+        expect(water, reads: "Done")
+        expect(stretch, reads: "Next")
+        choose("Skip", on: stretch)
+        expect(stretch, reads: "Skipped")
+        keep("after actions")
 
-        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Mark not done"].waitForExistence(timeout: 2),
-                       "Back should have retracted the only tick")
+        choose("Not done", on: water)
+        expect(water, reads: "Next")
+        choose("Unskip", on: stretch)
+        expect(stretch, reads: "To do")
     }
 
     func testReportPagesOpen() {

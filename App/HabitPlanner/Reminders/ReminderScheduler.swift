@@ -68,7 +68,9 @@ enum ReminderScheduler {
             let days = ReminderPlan.days(
                 for: routine,
                 histories: histories,
-                finishedToday: model.runsToday[routine]?.endedAt != nil
+                // Nothing left to do or skip, from the same fold the list shows. Not the run's
+                // end time, which an Unskip does not take back on every copy.
+                finishedToday: !model.states(in: routine).values.contains(.next)
             )
             let minutes = settings.minutes(for: routine)
 

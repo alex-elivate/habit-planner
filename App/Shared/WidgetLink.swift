@@ -1,10 +1,10 @@
 import Foundation
 import HabitKit
 
-/// The URL a widget opens its app with, and the routine it asks to start.
+/// The URL a widget opens its app with, and the routine it asks to show.
 ///
 /// A widget cannot run anything itself. It can only open the app, so the only thing a tap
-/// carries is which routine to open the runner on. Anything else in the URL is ignored, and a
+/// carries is which routine to open the app on. Anything else in the URL is ignored, and a
 /// URL that names no routine opens the app on its first screen.
 nonisolated enum WidgetLink {
     static let scheme = "habitplanner"
