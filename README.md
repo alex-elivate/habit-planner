@@ -655,7 +655,7 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 |---|---|---|
 | 1 | HabitKit domain package | Done |
 | 2 | SwiftData persistence and CloudKit schema | Done |
-| 3 | iOS app, Today screen swipes and habit icons | Merged, awaiting device checks. Swipes and icons on a branch |
+| 3 | iOS app, Today screen swipes and habit icons | Merged, awaiting device checks |
 | 4 | watchOS app and sync bridge | Merged, awaiting device checks |
 | 5 | Widgets and watch complication | Merged, awaiting device checks |
 | 6 | App Intents, Siri, Shortcuts | Merged, awaiting device checks |
