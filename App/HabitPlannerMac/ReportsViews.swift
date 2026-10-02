@@ -119,10 +119,11 @@ struct LockInView: View {
         case .blocked(let assessment):
             if let habit = model.history(for: assessment.habitID)?.habit {
                 LabeledContent("Bedding in", value: habit.title)
-                LabeledContent("Sessions",
+                LabeledContent("Done", value: assessment.completionsLabel)
+                LabeledContent("Sessions so far",
                                value: "\(min(assessment.elapsedOccurrences, assessment.requiredOccurrences)) of \(assessment.requiredOccurrences)")
                 LabeledContent("Rate", value: assessment.rate.map { "\(Int(($0 * 100).rounded()))%" } ?? "–")
-                ProgressView(value: assessment.repetitionProgress)
+                ProgressView(value: assessment.bedInProgress)
                 Text(assessment.explanation).foregroundStyle(.secondary)
                 LabeledContent("Planned next", value: planned ?? "Not planned yet")
                 NavigationLink("Open \(habit.title)", value: habit.id)

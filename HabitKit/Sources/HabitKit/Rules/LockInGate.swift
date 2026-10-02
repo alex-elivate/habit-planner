@@ -36,6 +36,9 @@ public enum LockInGate {
         public let habitID: UUID
         public let elapsedOccurrences: Int
         public let requiredOccurrences: Int
+        /// Sessions done among the ones the rate is judged on: all of them until there are
+        /// `requiredOccurrences`, then the latest that many.
+        public let completedOccurrences: Int
         public let rate: Double?
         public let requiredRate: Double
         public let recentDoubleMiss: DayKey?
@@ -44,9 +47,38 @@ public enum LockInGate {
         public var isLockedIn: Bool { decision.isOpen }
 
         /// How far along the repetition requirement is, 0 through 1.
+        ///
+        /// Counts time, not completions, so every habit that joined on the same day shows the
+        /// same value. For showing how close a habit is to bedding in, use `bedInProgress`.
         public var repetitionProgress: Double {
             guard requiredOccurrences > 0 else { return 1 }
             return min(1, Double(elapsedOccurrences) / Double(requiredOccurrences))
+        }
+
+        /// Sessions that must be done out of `requiredOccurrences` to meet `requiredRate`.
+        public var requiredCompletions: Int {
+            Int((requiredRate * Double(requiredOccurrences)).rounded(.up))
+        }
+
+        /// How far the habit is towards bedding in, 0 through 1: sessions done against the
+        /// number needed. Unlike `repetitionProgress`, a habit done every day moves ahead of
+        /// one done twice. Full is necessary but not sufficient, since a recent double miss
+        /// still holds the gate.
+        public var bedInProgress: Double {
+            guard requiredCompletions > 0 else { return 1 }
+            return min(1, Double(completedOccurrences) / Double(requiredCompletions))
+        }
+
+        /// Sessions missed among the ones the rate is judged on.
+        public var missedOccurrences: Int {
+            min(elapsedOccurrences, requiredOccurrences) - completedOccurrences
+        }
+
+        /// Whether the habit can still bed in by its `requiredOccurrences`th session. Once more
+        /// sessions are missed than the rate allows, it needs longer, as later sessions push
+        /// the early misses out of the window.
+        public var canBedInOnTime: Bool {
+            missedOccurrences <= requiredOccurrences - requiredCompletions
         }
     }
 
@@ -55,14 +87,43 @@ public enum LockInGate {
         assess(history.habit.id, occurrences: history.settledOccurrences, today: history.today)
     }
 
+    /// Whether `history` needs help to bed in: waiting alone will not get it there.
+    ///
+    /// Either it has missed more than 28 sessions allow, or two misses in a row will still be
+    /// holding it when it reaches its 28th session. A double miss early on is not enough by
+    /// itself, since it stops counting after `doubleMissWindowDays` and a daily habit takes
+    /// 28 days to reach 28 sessions. Projected on the habit's schedule from today, ignoring
+    /// any pause to come.
+    public static func isBehind(_ history: HabitHistory) -> Bool {
+        let assessment = assess(history)
+        guard !assessment.isLockedIn else { return false }
+        if !assessment.canBedInOnTime { return true }
+        guard let secondMiss = assessment.recentDoubleMiss else { return false }
+        let clears = secondMiss.advanced(by: doubleMissWindowDays + 1)
+        let needed = assessment.requiredOccurrences - assessment.elapsedOccurrences
+        // Past 28 sessions with enough done, a pair holding the gate clears by waiting.
+        guard needed > 0 else { return false }
+        // The day of the 28th session: today counts, since it is not settled yet.
+        var day = history.today
+        var found = 0
+        for _ in 0..<(needed * 7 + 7) {
+            if history.habit.isScheduled(on: day) {
+                found += 1
+                if found == needed { break }
+            }
+            day = day.advanced(by: 1)
+        }
+        // The gate judges the 28th session the day after it, once it has settled.
+        return day.advanced(by: 1) < clears
+    }
+
     /// Judges a habit on `occurrences` alone, as if `today` were the day after the last.
     private static func assess(_ habitID: UUID, occurrences: [ScheduledOccurrence], today: DayKey) -> Assessment {
         let window = occurrences.suffix(requiredOccurrences)
-        let rate: Double? = window.isEmpty
-            ? nil
-            : Double(window.count(where: \.isCompleted)) / Double(window.count)
+        let completed = window.count(where: \.isCompleted)
+        let rate: Double? = window.isEmpty ? nil : Double(completed) / Double(window.count)
 
-        let doubleMiss = firstDoubleMiss(
+        let doubleMiss = latestDoubleMiss(
             in: occurrences,
             secondMissOnOrAfter: today.advanced(by: -doubleMissWindowDays)
         )
@@ -85,6 +146,7 @@ public enum LockInGate {
             habitID: habitID,
             elapsedOccurrences: occurrences.count,
             requiredOccurrences: requiredOccurrences,
+            completedOccurrences: completed,
             rate: rate,
             requiredRate: requiredRate,
             recentDoubleMiss: doubleMiss,
@@ -260,19 +322,25 @@ public enum LockInGate {
     /// blinded it to any pair straddling the boundary, which made the window 13 days rather
     /// than 14 for a daily habit. For a three-times-a-week habit the gap between consecutive
     /// sessions is two or three days, so the same slice hid a genuine double-miss entirely.
-    private static func firstDoubleMiss(
+    /// The latest miss that follows another miss, on or after `earliest`.
+    ///
+    /// The latest rather than the first, because it is the one that counts longest. Found in
+    /// review: with pairs ten days apart, reporting the first said the gate would clear days
+    /// before it did.
+    private static func latestDoubleMiss(
         in occurrences: [ScheduledOccurrence],
         secondMissOnOrAfter earliest: DayKey
     ) -> DayKey? {
         var previousWasMiss = false
+        var latest: DayKey?
         for occurrence in occurrences {
             if occurrence.isCompleted {
                 previousWasMiss = false
             } else {
-                if previousWasMiss, occurrence.day >= earliest { return occurrence.day }
+                if previousWasMiss, occurrence.day >= earliest { latest = occurrence.day }
                 previousWasMiss = true
             }
         }
-        return nil
+        return latest
     }
 }

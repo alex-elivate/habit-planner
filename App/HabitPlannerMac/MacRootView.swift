@@ -145,6 +145,7 @@ struct MacRoutineView: View {
         List {
             RoutineSection(routine: routine, add: { adding = true })
         }
+        .undoBar()
         .navigationTitle(routine.title)
         .toolbar {
             ToolbarItem {

@@ -59,6 +59,7 @@ struct HabitListRow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.healthMatch) private var healthMatch
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     let history: HabitHistory
     let state: StepState
 
@@ -133,7 +134,8 @@ struct HabitListRow: View {
     private func action(_ action: ListAction, _ title: String, _ symbol: String) -> some View {
         Button(title, systemImage: symbol) {
             Task {
-                let applied = await model.apply(action, to: history.habit.id)
+                let applied = await model.apply(action, to: history.habit.id,
+                                                offeringUndo: AppModel.undoDuration(voiceOver: voiceOver))
                 if applied, case .complete = action { completedHere += 1 }
             }
         }
@@ -262,11 +264,26 @@ struct AddHabitRow: View {
                         Label("Next habit unlocks when \(habit.title) beds in", systemImage: "lock")
                             .font(.subheadline)
                     }
-                    ProgressView(value: judged.repetitionProgress)
+                    ProgressView(value: judged.bedInProgress)
                     Text(judged.explanation).font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .combine)
+            }
+            // The habits holding the routine that waiting alone will not fix, with a way to
+            // the ideas on each one's page.
+            ForEach(model.fallingBehind(in: routine), id: \.habit.id) { behind in
+                NavigationLink(value: behind.habit.id) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(behind.habit.title) is falling behind")
+                            Text("See what could help").font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "lightbulb").foregroundStyle(.orange)
+                    }
+                }
+                .accessibilityIdentifier("behind.\(behind.habit.title)")
             }
             PlannedHabitRow(routine: routine)
         }

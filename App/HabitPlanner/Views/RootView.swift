@@ -29,6 +29,14 @@ struct RootView: View {
         .task {
             model.observeRemoteChanges()
             await model.refresh(health: health, reminders: reminders)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-PostTestReminder") {
+                // Seeded habits arrive just after the first load.
+                try? await Task.sleep(for: .seconds(2))
+                await model.reload()
+                await ReminderScheduler.postTestReminder(for: .morning, model: model)
+            }
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { refresh() }
