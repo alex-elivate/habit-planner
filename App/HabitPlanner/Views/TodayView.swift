@@ -13,6 +13,7 @@ struct TodayView: View {
     var body: some View {
         ScrollViewReader { proxy in
             list
+                .undoBar()
                 // Held until the first load, so a cold launch from a widget scrolls to rows
                 // that exist rather than to where they will be.
                 .onChange(of: focus, initial: true) { scroll(proxy) }

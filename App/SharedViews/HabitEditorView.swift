@@ -11,12 +11,16 @@ struct HabitEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     let mode: Mode
+    /// The field to open on, when the editor was opened to change one thing.
+    let focus: HabitEditorFocus?
     @State private var draft: HabitDraft
     @State private var saving = false
     @State private var refusal: String?
+    @FocusState private var focused: HabitEditorFocus?
 
-    init(mode: Mode, habit: Habit? = nil) {
+    init(mode: Mode, habit: Habit? = nil, focus: HabitEditorFocus? = nil) {
         self.mode = mode
+        self.focus = focus
         switch mode {
         case .new(let routine): _draft = State(initialValue: HabitDraft(routine: routine))
         case .edit: _draft = State(initialValue: habit.map(HabitDraft.init) ?? HabitDraft())
@@ -24,6 +28,27 @@ struct HabitEditorView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                // The field asked for gets focus when the editor appears. Also set once the
+                // sheet has settled, since focus set while it is still animating in can be
+                // dropped.
+                .defaultFocus($focused, focus == .schedule ? nil : focus)
+                .task {
+                    guard let focus else { return }
+                    // After the sheet has finished presenting. Focus set while it is still
+                    // animating in is dropped.
+                    try? await Task.sleep(for: .milliseconds(700))
+                    if focus == .schedule {
+                        withAnimation { proxy.scrollTo(HabitEditorFocus.schedule, anchor: .top) }
+                    } else {
+                        focused = focus
+                    }
+                }
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 TextField("Habit", text: $draft.title, prompt: Text("Stretch"))
@@ -48,15 +73,23 @@ struct HabitEditorView: View {
 
             Section {
                 TextField("Cue", text: $draft.cue, prompt: Text("After I pour my coffee"), axis: .vertical)
+                    .focused($focused, equals: .cue)
+                    .accessibilityLabel("Cue")
+                    .accessibilityIdentifier("editor.cue")
                 TextField("Two-minute version", text: $draft.twoMinuteVersion,
                           prompt: Text("Touch my toes once"), axis: .vertical)
+                    .focused($focused, equals: .twoMinuteVersion)
+                    .accessibilityLabel("Two-minute version")
+                    .accessibilityIdentifier("editor.twoMinuteVersion")
                 TextField("Identity", text: $draft.identityStatement,
                           prompt: Text("I'm someone who moves every morning"), axis: .vertical)
+                    .accessibilityLabel("Identity")
             } footer: {
                 Text("The cue anchors this habit to something you already do. The two-minute version is so small you cannot say no. The identity is who each repetition votes for.")
             }
 
             ScheduleSection(schedule: $draft.schedule)
+                .id(HabitEditorFocus.schedule)
 
             if let refusal {
                 Section { Text(refusal).foregroundStyle(.red) }

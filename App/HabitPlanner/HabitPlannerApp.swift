@@ -84,10 +84,20 @@ final class Launch {
                 glance: actions.glance
             )
             AppDependencyManager.shared.add(dependency: held)
+            ReminderActions.shared.model = model
+            ReminderActions.shared.settings = reminders
             if mode.bridges {
                 let bridge = PhoneBridge(model: model)
                 bridge.start()
                 self.bridge = bridge
+            }
+            // After the bridge, which sets its own hook. Every reload, so a reminder whose
+            // habit was done elsewhere loses its buttons.
+            let previous = model.afterReload
+            model.afterReload = { [weak model] in
+                previous?()
+                guard let model else { return }
+                Task { await ReminderActions.pruneDelivered(model: model) }
             }
             #if DEBUG
             if mode.isSeeded {
@@ -128,18 +138,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        ReminderActions.registerCategory()
         // CloudKit delivers changes from other devices as silent pushes.
         application.registerForRemoteNotifications()
         return true
     }
 
+    /// The completion-handler form, called on the main thread.
+    ///
+    /// Found by `ReminderActionTests`: the `async` form returns on a background thread, and
+    /// when the app is in the background UIKit stops it with an assertion, because it updates
+    /// the app's snapshot on the way out. Pressing Done on the lock screen crashed the app.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        let raw = response.notification.request.content.userInfo[ReminderScheduler.routineKey] as? String
-        await MainActor.run {
-            router.requestedRoutine = raw.flatMap(RoutineSlot.init(rawValue:))
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
+        let action = response.actionIdentifier
+        let payload = ReminderActions.Payload(response.notification.request.content.userInfo)
+        Task { @MainActor in
+            // Done and Skip work in the background. A tap on the reminder opens the routine.
+            if action == ReminderActions.doneAction || action == ReminderActions.skipAction {
+                await ReminderActions.shared.handle(action, payload: payload)
+            } else {
+                router.requestedRoutine = payload.routine.flatMap(RoutineSlot.init(rawValue:))
+            }
+            completionHandler()
         }
     }
 

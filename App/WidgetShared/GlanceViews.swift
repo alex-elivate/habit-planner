@@ -179,7 +179,7 @@ private struct UnlockView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             case .beddingIn(let title, let assessment):
-                Gauge(value: assessment.repetitionProgress) { EmptyView() }
+                Gauge(value: assessment.bedInProgress) { EmptyView() }
                     .gaugeStyle(.accessoryLinearCapacity)
                     .tint(.accentColor)
                 Text("\(title): \(assessment.explanation)")
@@ -286,7 +286,7 @@ extension RoutineGlance {
             let blocker: String
             switch assessment.decision {
             case .open, .blocked(.notEnoughHistory):
-                blocker = "\(min(assessment.elapsedOccurrences, assessment.requiredOccurrences)) of \(assessment.requiredOccurrences)"
+                blocker = "\(assessment.completionsLabel) done"
             case .blocked(.rateTooLow):
                 blocker = "needs \(Int((assessment.requiredRate * 100).rounded()))%"
             case .blocked(.recentDoubleMiss):

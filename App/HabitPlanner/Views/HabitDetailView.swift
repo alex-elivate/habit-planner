@@ -6,7 +6,7 @@ struct HabitDetailView: View {
     @Environment(AppModel.self) private var model
     let habitID: UUID
 
-    @State private var editing = false
+    @State private var editing: HabitEditRequest?
     @State private var linking = false
     @State private var confirmingArchive = false
 
@@ -22,6 +22,12 @@ struct HabitDetailView: View {
         let habit = history.habit
         let assessment = LockInGate.assess(history)
         return List {
+            if model.fallingBehind(in: habit.routine).contains(where: { $0.habit.id == habitID }) {
+                FallingBehindSection(behind: FallingBehind(history: history, assessment: assessment)) { focus in
+                    editing = HabitEditRequest(focus: focus)
+                }
+            }
+
             Section {
                 if let cue = habit.cue { LabeledContent("Cue", value: cue) }
                 if let small = habit.twoMinuteVersion { LabeledContent("Two-minute version", value: small) }
@@ -36,7 +42,7 @@ struct HabitDetailView: View {
                                value: ScoreEngine.score(for: [history]).map { "\($0)" } ?? "–")
                 VStack(alignment: .leading, spacing: 6) {
                     Text(assessment.isLockedIn ? "Bedded in" : "Bedding in")
-                    ProgressView(value: assessment.repetitionProgress)
+                    ProgressView(value: assessment.bedInProgress)
                     Text(assessment.explanation).font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
@@ -79,10 +85,12 @@ struct HabitDetailView: View {
         }
         .navigationTitle(habit.title)
         .toolbar {
-            Button("Edit") { editing = true }
+            Button("Edit") {
+                editing = HabitEditRequest()
+            }
         }
-        .sheet(isPresented: $editing) {
-            NavigationStack { HabitEditorView(mode: .edit(habitID), habit: habit) }
+        .sheet(item: $editing) { request in
+            NavigationStack { HabitEditorView(mode: .edit(habitID), habit: habit, focus: request.focus) }
         }
         .sheet(isPresented: $linking) {
             NavigationStack { HealthLinkPicker(habitID: habitID) }

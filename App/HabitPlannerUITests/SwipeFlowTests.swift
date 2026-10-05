@@ -133,4 +133,46 @@ final class SwipeFlowTests: XCTestCase {
         XCTAssertEqual(shown, .completed, "The evening routine is not on screen")
         XCTAssertTrue(app.navigationBars["Today"].exists, "Still on the habit's page")
     }
+
+    func testUndoTakesASwipeBack() {
+        XCTAssertTrue(row(water).waitForExistence(timeout: 15))
+        fullSwipe(water, right: true)
+        expect(water, reads: "Done")
+        let undo = app.buttons["undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Done: \(water)"].exists)
+        keepScreenshot("undo-bar")
+        undo.tap()
+        expect(water, reads: "Next")
+
+        // Undoing the completion of a skipped habit leaves it skipped.
+        fullSwipe(water, right: false)
+        expect(water, reads: "Skipped")
+        fullSwipe(water, right: true)
+        expect(water, reads: "Done")
+        app.buttons["undo"].tap()
+        expect(water, reads: "Skipped")
+    }
+
+    func testFallingBehindOffersIdeas() {
+        app.terminate()
+        app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-DemoFallingBehind"]
+        app.launch()
+
+        let link = app.buttons["behind.Walk the dog"]
+        XCTAssertTrue(link.waitForExistence(timeout: 15), "Today does not say Walk the dog is falling behind")
+        keepScreenshot("falling-behind-today")
+        link.tap()
+
+        let smaller = app.buttons["behind.twoMinuteVersion"]
+        XCTAssertTrue(smaller.waitForExistence(timeout: 15))
+        keepScreenshot("falling-behind-ideas")
+        smaller.tap()
+
+        // The editor opens on the two-minute version, ready to type.
+        let field = app.textFields["editor.twoMinuteVersion"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        let focused = expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 10), .completed, "The editor did not open on the field")
+    }
 }

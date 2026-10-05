@@ -6,7 +6,7 @@ struct HabitReportView: View {
     @Environment(AppModel.self) private var model
     let habitID: UUID
 
-    @State private var editing = false
+    @State private var editing: HabitEditRequest?
     @State private var confirmingArchive = false
     @State private var shownMonth: (year: Int, month: Int)?
 
@@ -21,10 +21,23 @@ struct HabitReportView: View {
                         PeriodTable(title: "Weeks", periods: report.weeks(6), label: weekLabel)
                         PeriodTable(title: "Months", periods: report.months(6), label: monthLabel)
                     }
+                    if let assessment = judged(history), LockInGate.isBehind(history) {
+                        let behind = FallingBehind(history: history, assessment: assessment)
+                        GroupBox(behind.title) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(behind.reason).foregroundStyle(.secondary)
+                                behind.ideas { focus in
+                                    editing = HabitEditRequest(focus: focus)
+                                }
+                                .buttonStyle(.link)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                     if let assessment = judged(history) {
                         GroupBox("Lock-in") {
                             VStack(alignment: .leading, spacing: 6) {
-                                ProgressView(value: assessment.repetitionProgress)
+                                ProgressView(value: assessment.bedInProgress)
                                 Text(assessment.explanation).foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -36,8 +49,8 @@ struct HabitReportView: View {
             }
             .navigationTitle(history.habit.title)
             .toolbar { actions(history) }
-            .sheet(isPresented: $editing) {
-                NavigationStack { HabitEditorView(mode: .edit(habitID), habit: history.habit) }
+            .sheet(item: $editing) { request in
+                NavigationStack { HabitEditorView(mode: .edit(habitID), habit: history.habit, focus: request.focus) }
                     .frame(minWidth: 480, minHeight: 540)
             }
             .confirmationDialog("Archive \(history.habit.title)?", isPresented: $confirmingArchive) {
@@ -93,7 +106,9 @@ struct HabitReportView: View {
                 .disabled(!model.canRestore(habitID))
                 .help(model.canRestore(habitID) ? "Restore" : "Restoring waits until the routine's newest habit beds in")
             }
-            Button("Edit", systemImage: "pencil") { editing = true }
+            Button("Edit", systemImage: "pencil") {
+                editing = HabitEditRequest()
+            }
                 .keyboardShortcut("e", modifiers: .command)
         }
     }

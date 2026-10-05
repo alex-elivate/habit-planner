@@ -28,9 +28,14 @@ enum DemoData {
                   routine: .evening, order: 0, startedOn: today.advanced(by: -35)),
         ]
 
+        // With `-DemoFallingBehind`, the newest habit misses its last five sessions, one more
+        // than 28 sessions allow, so the falling-behind ideas show.
+        let behind = ProcessInfo.processInfo.arguments.contains("-DemoFallingBehind")
         for habit in habits {
             try? await store.upsert(habit)
-            for day in habit.startedOn.through(today.advanced(by: -1)) where habit.isScheduled(on: day) {
+            let scheduled = habit.startedOn.through(today.advanced(by: -1)).filter { habit.isScheduled(on: $0) }
+            let missed = behind && habit.title == "Walk the dog" ? Set(scheduled.suffix(5)) : []
+            for day in scheduled where !missed.contains(day) {
                 // Roughly nine in ten, deterministic so screenshots are repeatable.
                 guard (day.ordinal + habit.order * 3) % 10 != 0 else { continue }
                 let instant = day.start(in: timeZone).addingTimeInterval(7.5 * 3_600)

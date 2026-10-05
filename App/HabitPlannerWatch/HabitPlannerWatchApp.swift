@@ -129,6 +129,12 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificatio
 
     func applicationDidFinishLaunching() {
         UNUserNotificationCenter.current().delegate = self
+        // The phone's reminders carry Done and Skip, and a forwarded one would show them here.
+        // The watch does not act on them yet, so its category has none, and a tap opens the
+        // runner instead of a button that would quietly do nothing.
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: "routine.step", actions: [], intentIdentifiers: [])
+        ])
     }
 
     nonisolated func userNotificationCenter(
