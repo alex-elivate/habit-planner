@@ -21,8 +21,10 @@ final class ReminderActionTests: XCTestCase {
             return true
         }
         app.launch()
+        // The prompt can take well over ten seconds on a simulator that has just booted, and
+        // without Allow the reminder is never scheduled.
         let allow = springboard.alerts.buttons["Allow"]
-        if allow.waitForExistence(timeout: 10) { allow.tap() }
+        if allow.waitForExistence(timeout: 30) { allow.tap() }
         XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", water))
             .firstMatch.waitForExistence(timeout: 15))
 
@@ -33,7 +35,15 @@ final class ReminderActionTests: XCTestCase {
         XCUIDevice.shared.press(.home)
         let reminder = springboard.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@", "Start with \(water)")).firstMatch
-        XCTAssertTrue(reminder.waitForExistence(timeout: 45), "The reminder never arrived")
+        // The banner shows for a few seconds, and a slow simulator's check can miss it. It
+        // stays in Notification Centre, under a swipe up, so look there before giving up.
+        if !reminder.waitForExistence(timeout: 45) {
+            let at = { (y: CGFloat) in self.springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y)) }
+            at(0.005).press(forDuration: 0.05, thenDragTo: at(0.6))
+            sleep(1)
+            at(0.7).press(forDuration: 0.05, thenDragTo: at(0.35))
+        }
+        XCTAssertTrue(reminder.waitForExistence(timeout: 15), "The reminder never arrived")
         reminder.press(forDuration: 1.2)
         let done = springboard.buttons["Done"]
         XCTAssertTrue(done.waitForExistence(timeout: 10), "The reminder has no Done button")
@@ -41,7 +51,7 @@ final class ReminderActionTests: XCTestCase {
 
         // The follow-up names the next habit.
         let followUp = springboard.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "Done: \(water). Next:")).firstMatch
+            .matching(NSPredicate(format: "label CONTAINS %@", "Next: ")).firstMatch
         XCTAssertTrue(followUp.waitForExistence(timeout: 20), "No follow-up after Done")
         let attachment = XCTAttachment(screenshot: springboard.screenshot())
         attachment.name = "follow-up"

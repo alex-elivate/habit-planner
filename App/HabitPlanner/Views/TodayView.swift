@@ -57,7 +57,7 @@ struct TodayView: View {
             }
         }
         .navigationTitle("Today")
-        .navigationDestination(for: UUID.self) { HabitDetailView(habitID: $0) }
+        .navigationDestination(for: UUID.self) { HabitDetailView(habitID: $0).coversUndoBar() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
@@ -66,15 +66,18 @@ struct TodayView: View {
         }
         .sheet(item: $adding) { routine in
             NavigationStack { HabitEditorView(mode: .new(routine)) }
+                .coversUndoBar()
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack { SettingsView() }
+                .coversUndoBar()
         }
         // First launch: walk through both routines. Only when nothing at all is stored, so
         // somebody who skipped it sees it again rather than an empty screen, and it never
         // appears over habits.
         .sheet(isPresented: $firstLaunch) {
             NavigationStack { RoutineSetupView(routine: .morning, then: .evening) }
+                .coversUndoBar()
         }
         .onChange(of: model.isEmpty, initial: true) { _, empty in
             if empty { firstLaunch = true }

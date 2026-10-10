@@ -7,7 +7,8 @@ import UserNotifications
 ///
 /// Each reminder names one habit and carries its identifier, and its buttons act on that
 /// habit. After either, a quiet follow-up names the next habit with the same buttons, so a
-/// routine can be worked through from the lock screen. The last one says the routine is done.
+/// routine can be worked through from the lock screen. After the last, nothing follows: a
+/// "done" note with no buttons was one more alert to clear, and said only what was pressed.
 ///
 /// The app runs in the background for this, so the write is held open until iCloud has it,
 /// as for the widget. A reminder from an earlier day does nothing, since its buttons would
@@ -115,20 +116,34 @@ final class ReminderActions {
                        next: nil)
             return
         }
-        await postNext(routine: routine, after: action == .skip ? "Skipped \(title)." : "Done: \(title).")
+        await postNext(routine: routine, after: nil)
         if let settings { await ReminderScheduler.reschedule(model: model, settings: settings) }
     }
 
-    /// Says `what`, then the habit next now with its buttons, or that the routine is finished.
-    private func postNext(routine: RoutineSlot, after what: String) async {
+    /// Names the habit next now, with its buttons, after `what`.
+    ///
+    /// `what` explains a press that changed nothing, and is `nil` after one that worked, since
+    /// the person knows what they pressed. With nothing next, a press that worked leaves no
+    /// follow-up, and the earlier one is cleared so no stale buttons remain.
+    private func postNext(routine: RoutineSlot, after what: String?) async {
         guard let model else { return }
+        let lead = what.map { $0 + " " } ?? ""
         if let next = model.states(in: routine).first(where: { $0.value == .next })?.key,
            let nextTitle = model.history(for: next)?.habit.title {
-            await post(routine: routine, body: "\(what) Next: \(nextTitle).", next: next)
-        } else {
+            await post(routine: routine, body: "\(lead)Next: \(nextTitle).", next: next)
+        } else if let what {
             await post(routine: routine, body: "\(what) That finishes your \(routine.title.lowercased()) routine.",
                        next: nil)
+        } else {
+            await clearFollowUps(routine: routine)
         }
+    }
+
+    private func clearFollowUps(routine: RoutineSlot) async {
+        let center = UNUserNotificationCenter.current()
+        let prefix = "\(Self.followUpPrefix)\(routine.rawValue)."
+        let earlier = await center.deliveredNotifications().map(\.request.identifier).filter { $0.hasPrefix(prefix) }
+        center.removeDeliveredNotifications(withIdentifiers: earlier)
     }
 
     /// Takes back delivered reminders that no longer fit: any from an earlier day, and ones
@@ -166,10 +181,7 @@ final class ReminderActions {
         guard let model else { return }
         let center = UNUserNotificationCenter.current()
         let prefix = "\(Self.followUpPrefix)\(routine.rawValue)."
-        if replacing {
-            let earlier = await center.deliveredNotifications().map(\.request.identifier).filter { $0.hasPrefix(prefix) }
-            center.removeDeliveredNotifications(withIdentifiers: earlier)
-        }
+        if replacing { await clearFollowUps(routine: routine) }
 
         let content = UNMutableNotificationContent()
         content.title = "\(routine.title) routine"

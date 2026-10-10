@@ -240,6 +240,7 @@ struct AddHabitRow: View {
                 .sheet(isPresented: $settingUp) {
                     NavigationStack { RoutineSetupView(routine: routine) }
                         .sheetMinimumSize(width: 480, height: 540)
+                        .coversUndoBar()
                 }
             Button("Add a habit with details", systemImage: "plus", action: add)
         case .open:
@@ -312,6 +313,7 @@ struct PlannedHabitRow: View {
         .sheet(isPresented: $editing) {
             NavigationStack { PlanHabitView(routine: routine, title: plan?.title ?? "") }
                 .sheetMinimumSize(width: 440, height: 300)
+                .coversUndoBar()
         }
     }
 }

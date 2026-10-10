@@ -135,6 +135,9 @@ final class SwipeFlowTests: XCTestCase {
     }
 
     func testUndoTakesASwipeBack() {
+        app.terminate()
+        app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-LongUndo"]
+        app.launch()
         XCTAssertTrue(row(water).waitForExistence(timeout: 15))
         fullSwipe(water, right: true)
         expect(water, reads: "Done")
@@ -174,5 +177,30 @@ final class SwipeFlowTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 15))
         let focused = expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
         XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 10), .completed, "The editor did not open on the field")
+    }
+
+    func testHealthCountsAndUndoSticks() {
+        app.terminate()
+        app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-DemoHealthDose", "-LongUndo"]
+        app.launch()
+
+        // Counted when the app comes to the screen, with an offer to undo it. Seeding lands
+        // after the first pass, so bring the app back once to run another.
+        XCTAssertTrue(row(water).waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        expect(water, reads: "Done")
+        let undo = app.buttons["undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Counted from Health: \(water)"].exists)
+        keepScreenshot("counted-from-health")
+        undo.tap()
+        expect(water, reads: "Next")
+
+        // Undoing is the person's say for today, so coming back does not count it again.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        sleep(3)
+        expect(water, reads: "Next")
     }
 }

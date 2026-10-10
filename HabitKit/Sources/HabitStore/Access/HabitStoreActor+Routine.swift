@@ -90,6 +90,10 @@ extension HabitStoreActor {
 public enum ListAction: Hashable, Sendable {
     /// Done. `occurredAt` is set when Health proposed it and the person confirmed.
     case complete(occurredAt: Date? = nil)
+    /// Done because Health shows it, without the person asking. Refused if the day already
+    /// carries any assertion for the habit, a retraction included, so a habit somebody marked
+    /// not done, or whose count from Health they undid, stays as they left it.
+    case propose(occurredAt: Date)
     case skip
     /// Undoes whichever of the two was done: retracts a completion and reopens its step.
     case reopen
@@ -127,19 +131,17 @@ extension HabitStoreActor {
                                    at: instant, in: timeZone)
 
         switch action {
+        case .propose(let occurredAt):
+            guard history.isDueToday, !history.isCompletedToday,
+                  try loadCompletionEvents(for: habitID).values.allSatisfy({ $0.dayKey != day })
+            else { return false }
+            return try complete(habitID, at: occurredAt, source: .automatic, runner: &runner,
+                                day: day, instant: instant, timeZone: timeZone)
+
         case .complete(let occurredAt):
             guard history.isDueToday, !history.isCompletedToday else { return false }
-            let source: CompletionSource = occurredAt == nil ? .manual : .automatic
-            if let event = runner.complete(habitID, at: instant, occurredAt: occurredAt, source: source) {
-                try record(event)
-                try upsert(runner.run)
-            } else {
-                // Skipped earlier today. The step stays passed, and the habit is now done.
-                try record(CompletionEvent(habitID: habitID, dayKey: day, source: source,
-                                           occurredAt: occurredAt ?? instant, recordedAt: instant,
-                                           timeZoneIdentifier: timeZone.identifier))
-            }
-            return true
+            return try complete(habitID, at: occurredAt, source: occurredAt == nil ? .manual : .automatic,
+                                runner: &runner, day: day, instant: instant, timeZone: timeZone)
 
         case .skip:
             guard runner.remaining.contains(habitID) else { return false }
@@ -161,5 +163,22 @@ extension HabitStoreActor {
             }
             return changed
         }
+    }
+
+    /// Records the completion, then passes its step on the run if it was still to come.
+    private func complete(
+        _ habitID: UUID, at occurredAt: Date?, source: CompletionSource,
+        runner: inout RoutineRunner, day: DayKey, instant: Date, timeZone: TimeZone
+    ) throws -> Bool {
+        if let event = runner.complete(habitID, at: instant, occurredAt: occurredAt, source: source) {
+            try record(event)
+            try upsert(runner.run)
+        } else {
+            // Skipped earlier today. The step stays passed, and the habit is now done.
+            try record(CompletionEvent(habitID: habitID, dayKey: day, source: source,
+                                       occurredAt: occurredAt ?? instant, recordedAt: instant,
+                                       timeZoneIdentifier: timeZone.identifier))
+        }
+        return true
     }
 }

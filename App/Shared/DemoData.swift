@@ -12,7 +12,7 @@ enum DemoData {
     static func seed(into store: HabitStoreActor, timeZone: TimeZone = .current) async {
         let today = DayKey(.now, in: timeZone)
 
-        let habits = [
+        var habits = [
             Habit(title: "Drink a glass of water", cue: "After I turn off my alarm",
                   twoMinuteVersion: "Fill the glass", identityStatement: "I look after my body",
                   routine: .morning, order: 0, startedOn: today.advanced(by: -60)),
@@ -31,6 +31,14 @@ enum DemoData {
         // With `-DemoFallingBehind`, the newest habit misses its last five sessions, one more
         // than 28 sessions allow, so the falling-behind ideas show.
         let behind = ProcessInfo.processInfo.arguments.contains("-DemoFallingBehind")
+        // With `-DemoHealthDose`, the first morning habit is linked to a medication, which the
+        // demo Health service reports as taken. See `HealthService.signalInstants`.
+        if ProcessInfo.processInfo.arguments.contains("-DemoHealthDose") {
+            habits[0].completionSource = .automatic
+            try? await store.upsert(HealthBinding(habitID: habits[0].id, signal: .medication,
+                                                  externalIdentifier: "name:Demo|tablet",
+                                                  lastReconciledDay: today))
+        }
         for habit in habits {
             try? await store.upsert(habit)
             let scheduled = habit.startedOn.through(today.advanced(by: -1)).filter { habit.isScheduled(on: $0) }

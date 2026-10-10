@@ -183,26 +183,47 @@ final class AppModel: RoutineActing {
 
     /// The last swipe, and how to take it back, for the undo bar.
     struct UndoOffer: Identifiable, Equatable {
+        /// One habit's part in an offer.
+        struct Step: Equatable {
+            let habitID: UUID
+            /// Applied in order. More than one where a single action cannot restore the state,
+            /// such as a skipped habit that was then done.
+            let inverse: [ListAction]
+            /// Where the change left the habit. Undo applies only while it is still there.
+            let leftAs: StepState
+        }
+
         let id = UUID()
-        let habitID: UUID
         let message: String
-        /// Applied in order. More than one where a single action cannot restore the state,
-        /// such as a skipped habit that was then done.
-        let inverse: [ListAction]
-        /// The day the swipe was made on, and where it left the habit. Undo applies only while
-        /// both still hold, so a change from elsewhere or midnight cannot be undone by mistake.
+        /// More than one when Health counted several habits at once.
+        let steps: [Step]
+        /// The day the change was made on. With `Step.leftAs`, this keeps a change from
+        /// elsewhere, or midnight, from being undone by mistake.
         let day: DayKey
-        let leftAs: StepState
-        /// Offers last a few seconds. Held as a time rather than a timer, so an offer whose bar
-        /// was not on screen when it ran out is not shown later.
-        let expires: Date
+        /// How long the bar shows once it is on screen.
+        let duration: TimeInterval
+        /// Set when the bar first shows, so an offer made while another screen was up still
+        /// gets its few seconds when Today comes back. Held as a time rather than a timer.
+        var expires: Date?
     }
 
-    /// Shown for a few seconds after a swipe. Held in memory only: it is about this screen.
+    /// Shown for a few seconds after a swipe or a count from Health. Held in memory only.
     var undoOffer: UndoOffer?
 
+    /// Screens over the one the undo bar is on, each added by `coversUndoBar()`. The bar
+    /// waits while any is up. Each screen reports itself, so a new sheet cannot be missed
+    /// the way a list kept beside the bar could miss one.
+    var coveringScreens: Set<UUID> = []
+
     /// How long an offer lasts, longer with VoiceOver, which has to read the message first.
-    static func undoDuration(voiceOver: Bool) -> TimeInterval { voiceOver ? 12 : 5 }
+    static func undoDuration(voiceOver: Bool) -> TimeInterval {
+        #if DEBUG
+        // For the UI tests that press Undo. CI's simulator can take longer than five seconds
+        // between seeing the bar and tapping it, and the bar is gone by then.
+        if ProcessInfo.processInfo.arguments.contains("-LongUndo") { return 60 }
+        #endif
+        return voiceOver ? 12 : 5
+    }
 
     /// Applies a swipe from the list. See `HabitStoreActor.apply`. Returns whether the swipe
     /// changed anything.
@@ -212,7 +233,7 @@ final class AppModel: RoutineActing {
     /// different day from the row it was made on would correct nothing.
     ///
     /// With `offeringUndo`, a swipe that changed something leaves an `undoOffer` lasting
-    /// `undoFor` seconds.
+    /// that many seconds.
     @discardableResult
     func apply(_ action: ListAction, to habitID: UUID, offeringUndo undoFor: TimeInterval? = nil) async -> Bool {
         guard let history = history(for: habitID) else { return false }
@@ -231,38 +252,68 @@ final class AppModel: RoutineActing {
             changed = try await store.apply(action, to: habitID, on: day, at: now, timeZone: timeZone)
         }
         if changed, let undoFor, let before, let after = states(in: routine)[habitID] {
-            undoOffer = Self.undo(for: action, from: before, to: after, undoing: undone,
-                                  habitID: habitID, title: history.habit.title, day: day,
-                                  expires: now.addingTimeInterval(undoFor))
+            let (message, inverse) = Self.undo(for: action, from: before, undoing: undone,
+                                               title: history.habit.title)
+            undoOffer = UndoOffer(message: message,
+                                  steps: [.init(habitID: habitID, inverse: inverse, leftAs: after)],
+                                  day: day, duration: undoFor)
         }
         return changed
     }
 
-    /// Takes the offered swipe back, if it is still the offer and still what happened.
+    /// Starts the offer's few seconds, the first time its bar shows. Returns when it ends,
+    /// and whether this was the first time, so the bar is announced once.
+    func showing(_ offer: UndoOffer) -> (expires: Date, isFirst: Bool)? {
+        guard var current = undoOffer, current.id == offer.id else { return nil }
+        if let expires = current.expires { return (expires, false) }
+        let expires = Date.now.addingTimeInterval(current.duration)
+        current.expires = expires
+        undoOffer = current
+        return (expires, true)
+    }
+
+    /// Takes the offered change back, for each habit still as the change left it. One that
+    /// was changed again since, here or elsewhere, is left alone.
     func undo(_ offer: UndoOffer) async {
         guard undoOffer?.id == offer.id else { return }
         undoOffer = nil
-        guard isStillUndoable(offer) else { return }
-        for action in offer.inverse {
-            await apply(action, to: offer.habitID)
+        guard !offer.isExpired() else { return }
+        for step in holding(offer) {
+            for action in step.inverse { await apply(action, to: step.habitID) }
         }
     }
 
-    /// Whether `offer` still describes the habit: same day, same state, not expired.
+    /// Whether any habit in `offer` is still as the change left it, on the same day.
     func isStillUndoable(_ offer: UndoOffer, at instant: Date = .now) -> Bool {
-        guard instant < offer.expires, let history = history(for: offer.habitID),
-              history.today == offer.day else { return false }
-        return states(in: history.habit.routine)[offer.habitID] == offer.leftAs
+        !offer.isExpired(at: instant) && !holding(offer).isEmpty
     }
 
-    private static func undo(for action: ListAction, from before: StepState, to after: StepState,
-                             undoing undone: CompletionEvent?, habitID: UUID, title: String,
-                             day: DayKey, expires: Date) -> UndoOffer {
-        let (message, inverse): (String, [ListAction]) = switch action {
+    /// What the bar says: the offer's own message, or, when some of its habits changed again
+    /// since, only the ones Undo would still take back. Only a count from Health has more than
+    /// one habit, so the shorter message is worded for it.
+    func undoMessage(for offer: UndoOffer) -> String {
+        let holding = holding(offer)
+        guard holding.count < offer.steps.count else { return offer.message }
+        let titles = holding.compactMap { history(for: $0.habitID)?.habit.title }
+        return "Counted from Health: \(titles.formatted(.list(type: .and)))"
+    }
+
+    private func holding(_ offer: UndoOffer) -> [UndoOffer.Step] {
+        offer.steps.filter { step in
+            guard let history = history(for: step.habitID), history.today == offer.day else { return false }
+            return states(in: history.habit.routine)[step.habitID] == step.leftAs
+        }
+    }
+
+    static func undo(for action: ListAction, from before: StepState, undoing undone: CompletionEvent?,
+                     title: String) -> (message: String, inverse: [ListAction]) {
+        switch action {
         case .complete(let occurredAt):
             // Undoing the completion of a skipped habit puts it back to skipped, not to do.
             (occurredAt == nil ? "Done: \(title)" : "Counted from Health: \(title)",
              before == .skipped ? [.reopen, .skip] : [.reopen])
+        case .propose:
+            ("Counted from Health: \(title)", before == .skipped ? [.reopen, .skip] : [.reopen])
         case .skip:
             ("Skipped \(title)", [.reopen])
         case .reopen where before == .done:
@@ -272,8 +323,6 @@ final class AppModel: RoutineActing {
         case .reopen:
             ("Unskipped \(title)", [.skip])
         }
-        return UndoOffer(habitID: habitID, message: message, inverse: inverse, day: day,
-                         leftAs: after, expires: expires)
     }
 
     /// Habits the routine is waiting on that need help to bed in. See `LockInGate.isBehind`.
@@ -517,5 +566,12 @@ extension String {
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+extension AppModel.UndoOffer {
+    /// Whether its few seconds have run out. Never before the bar has shown.
+    func isExpired(at instant: Date = .now) -> Bool {
+        expires.map { instant >= $0 } ?? false
     }
 }
