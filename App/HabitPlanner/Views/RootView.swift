@@ -68,9 +68,16 @@ struct RootView: View {
 
     /// The first time Health shows for a linked habit today, if it does.
     private func healthMatch(_ habitID: UUID) async -> Date? {
-        guard let binding = model.bindings[habitID] else { return nil }
+        guard let binding = model.bindings[habitID],
+              let routine = model.history(for: habitID)?.habit.routine else { return nil }
         let interval = DateInterval(start: model.today.start(in: model.timeZone), end: .now)
-        return try? await health.signalInstants(for: binding, in: interval).first
+        guard let found = try? await health.signalInstants(for: binding, in: interval) else { return nil }
+        // One dose linked in both routines belongs to one of them. See `HealthMatching`.
+        return HealthMatching.instants(
+            found, for: routine, signal: binding.signal,
+            sharedAcrossRoutines: (model.sharedReadings[HealthMatching.key(binding)]?.count ?? 0) > 1,
+            in: model.timeZone
+        ).min()
     }
 
     private func refresh() {

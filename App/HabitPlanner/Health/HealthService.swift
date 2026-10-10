@@ -214,6 +214,13 @@ final class HealthService {
     /// medication it is the dose's own date, and only doses logged as taken count. Skipped and
     /// snoozed doses are the person telling Health they did not take it.
     func signalInstants(for binding: HealthBinding, in interval: DateInterval) async throws -> [Date] {
+        #if DEBUG
+        // The simulator has no medication doses. With `-DemoHealthDose`, every linked habit
+        // shows one at the start of the interval, so the count from Health can be tested.
+        if ProcessInfo.processInfo.arguments.contains("-DemoHealthDose") {
+            return [interval.start.addingTimeInterval(60)]
+        }
+        #endif
         guard isAvailable else { throw SignalError.unavailable }
         let during = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end,
                                                  options: .strictStartDate)

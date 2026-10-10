@@ -160,6 +160,8 @@ Arithmetic on a `DayKey` is time zone free and uses integer math rather than `Ca
 
 HealthKit can suggest that a walk happened or that a dose was logged, and the app still writes and owns the completion. Deriving completion from a live query would rest the gate on data that can vanish: revoking read permission returns an empty result set that is indistinguishable from never having done the habit, with no API to tell the two apart. Samples are also user-deletable, authorization is granted per medication, and iOS 26 lets someone share only a recent window of history.
 
+The app does count today's habit when Health shows it, but only as a proposal that fills a blank: it writes through `propose`, never over something the person recorded, and it offers an undo. See [Apple Health](#apple-health).
+
 So a health-backed habit degrades to an ordinary checkbox when the signal is missing, and the history already recorded is untouched. The drug, the dose and the schedule stay in Apple Health, which owns them properly.
 
 ### An unfinished day is not a miss
@@ -314,7 +316,7 @@ on a screen that small.
   habit left for **Unskip**. Both put the habit back where it was.
 - **Tap a habit** to open its details. On the Mac, right-click offers the same actions.
 - **Undo.** After every swipe, a bar along the bottom says what happened, with **Undo**, for
-  five seconds, or twelve with VoiceOver. Undoing the completion of a habit that had been
+  five seconds from when it shows, or twelve with VoiceOver. Undoing the completion of a habit that had been
   skipped leaves it skipped again, and undoing Not done on a habit counted from Health puts
   back Health's time. An offer applies only while the habit is still on the same day and in
   the state the swipe left it, so a change from elsewhere or midnight withdraws it. The offer
@@ -333,10 +335,29 @@ A swipe lands on the day the list was folded for, so a swipe in the minutes afte
 before the next reload still counts for the day on screen. A habit done out of order still
 leaves a step on the run, with no duration.
 
-When a habit linked to Health is next, the app asks Health in the foreground whether it already
-happened today, and again each time the app comes back to the screen. If it did, the row shows the
-time, and a full swipe right counts it at that time. Nothing is counted until the person
-swipes. A shorter swipe still offers Done, which counts it now.
+Each time the app opens or comes back to the screen, it asks Health whether any linked habit
+due today has already happened. If it has, the app counts it at the time Health shows, and the
+undo bar says so, "Counted from Health: Meds", for at least eight seconds from when Today
+shows it, so a count made while another screen was up is not lost. This only fills a blank. A
+habit somebody has already marked done or not done today is left alone, and so is one whose
+count they undid, since the undo writes a retraction and `propose` refuses any day that
+carries an assertion. A skipped habit can still be counted, because a skip records nothing
+about the habit.
+
+When one medication is linked in both routines, a dose before noon counts for the morning habit
+and a dose from noon on for the evening one, so one dose never ticks both. An evening medication
+habit takes only doses from noon on even when the drug is linked nowhere else, so a twice-daily
+drug's morning dose does not tick it. The past-day backfill follows the same rule. See
+`HealthMatching`. The limit of splitting on the clock is a morning dose taken after 12:00,
+which counts for the evening. Two habits in the same routine linked to the same medication would
+both count one dose, which no routine needs.
+
+One known limit: a Not done marked on another device that has not yet synced cannot be seen
+here, so a count from Health made in that window wins, being the later assertion. Undo, or Not
+done again, puts it right.
+
+If a habit was not counted, for example after an undo, the row still shows Health's time,
+and a full swipe right counts it at that time.
 
 A reminder, a widget tap, the Mac's Routine menu and "Start my morning routine in Habit Planner"
 open the app on Today at that routine.
@@ -363,8 +384,8 @@ drops out once the routine is finished. Reminder times are a per-device preferen
 Each reminder names one habit and has **Done** and **Skip** buttons that act on it from the
 lock screen, without opening the app. Today's names the habit next now, and later days name the
 first one due. After either button, a silent follow-up names the next habit with the same
-buttons, so a whole routine can be worked through from the lock screen. The last one says the
-routine is finished. A button acts only on the habit its reminder names. If that habit was
+buttons, so a whole routine can be worked through from the lock screen. It does not repeat
+what was pressed. After the last habit nothing follows, and the earlier follow-up is cleared. A button acts only on the habit its reminder names. If that habit was
 done or skipped somewhere else meanwhile, nothing is written and the follow-up says so, since
 acting on whichever habit is next would mark done something nobody did. After every reload,
 delivered reminders whose habit has been passed, or whose day is over, are taken back. A
@@ -714,7 +735,7 @@ These steps touch the Apple Developer account and cannot be undone, so they are 
 | 7 | macOS app and reporting | Built, awaiting device checks |
 | 8 | Lock-in ceremony and charts | |
 
-Deferred past v1: Foundation Models summaries (Mac only), Live Activities (iPhone-initiated only, since ActivityKit has no watchOS platform), and HealthKit auto-completion.
+Deferred past v1: Foundation Models summaries (Mac only), Live Activities (iPhone-initiated only, since ActivityKit has no watchOS platform), and counting from Health in the background, while the app is closed.
 
 ### A note on Apple Intelligence
 

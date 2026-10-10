@@ -57,13 +57,14 @@ struct MacRootView: View {
                         ContentUnavailableView("Choose a routine", systemImage: "sidebar.left")
                     }
                 }
-                .navigationDestination(for: UUID.self) { HabitReportView(habitID: $0) }
+                .navigationDestination(for: UUID.self) { HabitReportView(habitID: $0).coversUndoBar() }
             }
         }
         // First launch, as on the phone.
         .sheet(isPresented: $firstLaunch) {
             NavigationStack { RoutineSetupView(routine: .morning, then: .evening) }
                 .sheetMinimumSize(width: 480, height: 540)
+                .coversUndoBar()
         }
         .onChange(of: model.isEmpty, initial: true) { _, empty in
             if empty { firstLaunch = true }
@@ -158,6 +159,7 @@ struct MacRoutineView: View {
         .sheet(isPresented: $adding) {
             NavigationStack { HabitEditorView(mode: .new(routine)) }
                 .frame(minWidth: 480, minHeight: 540)
+                .coversUndoBar()
         }
         #if DEBUG
         .onChange(of: SnapshotDriver.shared.adding) { _, new in adding = new }

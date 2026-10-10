@@ -52,6 +52,7 @@ struct HabitReportView: View {
             .sheet(item: $editing) { request in
                 NavigationStack { HabitEditorView(mode: .edit(habitID), habit: history.habit, focus: request.focus) }
                     .frame(minWidth: 480, minHeight: 540)
+                    .coversUndoBar()
             }
             .confirmationDialog("Archive \(history.habit.title)?", isPresented: $confirmingArchive) {
                 Button("Archive", role: .destructive) {

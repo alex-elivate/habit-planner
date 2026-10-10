@@ -125,4 +125,29 @@ struct ListActionTests {
         try await store.upsert(stale)
         #expect(try await states(store)[water.id] == .next)
     }
+
+    @Test("Health counts a habit nobody has had a say on, and never one they have")
+    @MainActor
+    func proposeRespectsThePerson() async throws {
+        let (store, _) = try makeStore()
+        let meds = habit("Meds", order: 0), water = habit("Water", order: 1)
+        try await store.upsert(meds)
+        try await store.upsert(water)
+        let taken = morning.addingTimeInterval(-600)
+
+        #expect(try await store.apply(.propose(occurredAt: taken), to: meds.id, on: referenceToday, at: morning, timeZone: utc))
+        let event = try #require(try await store.loadCompletionEvents(for: meds.id).values.first)
+        #expect(event.source == .automatic)
+        #expect(event.occurredAt == taken)
+        #expect(try await states(store)[meds.id] == .done)
+
+        // Undone: the retraction is the person's say, so Health does not count it again.
+        try await store.apply(.reopen, to: meds.id, on: referenceToday, at: morning.addingTimeInterval(5), timeZone: utc)
+        #expect(try await store.apply(.propose(occurredAt: taken), to: meds.id, on: referenceToday, at: morning.addingTimeInterval(10), timeZone: utc) == false)
+        #expect(try await states(store)[meds.id] == .next)
+
+        // Skipped is not a say about done: the run step is not an assertion.
+        try await store.apply(.skip, to: water.id, on: referenceToday, at: morning, timeZone: utc)
+        #expect(try await store.apply(.propose(occurredAt: taken), to: water.id, on: referenceToday, at: morning.addingTimeInterval(20), timeZone: utc))
+    }
 }
