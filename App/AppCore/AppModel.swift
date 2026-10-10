@@ -216,7 +216,14 @@ final class AppModel: RoutineActing {
     var coveringScreens: Set<UUID> = []
 
     /// How long an offer lasts, longer with VoiceOver, which has to read the message first.
-    static func undoDuration(voiceOver: Bool) -> TimeInterval { voiceOver ? 12 : 5 }
+    static func undoDuration(voiceOver: Bool) -> TimeInterval {
+        #if DEBUG
+        // For the UI tests that press Undo. CI's simulator can take longer than five seconds
+        // between seeing the bar and tapping it, and the bar is gone by then.
+        if ProcessInfo.processInfo.arguments.contains("-LongUndo") { return 60 }
+        #endif
+        return voiceOver ? 12 : 5
+    }
 
     /// Applies a swipe from the list. See `HabitStoreActor.apply`. Returns whether the swipe
     /// changed anything.

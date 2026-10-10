@@ -135,6 +135,9 @@ final class SwipeFlowTests: XCTestCase {
     }
 
     func testUndoTakesASwipeBack() {
+        app.terminate()
+        app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-LongUndo"]
+        app.launch()
         XCTAssertTrue(row(water).waitForExistence(timeout: 15))
         fullSwipe(water, right: true)
         expect(water, reads: "Done")
@@ -178,7 +181,7 @@ final class SwipeFlowTests: XCTestCase {
 
     func testHealthCountsAndUndoSticks() {
         app.terminate()
-        app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-DemoHealthDose"]
+        app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-DemoHealthDose", "-LongUndo"]
         app.launch()
 
         // Counted when the app comes to the screen, with an offer to undo it. Seeding lands
