@@ -22,9 +22,10 @@ final class ReminderActionTests: XCTestCase {
         }
         app.launch()
         // The prompt can take well over ten seconds on a simulator that has just booted, and
-        // without Allow the reminder is never scheduled.
+        // without Allow the reminder is never scheduled. A run that kept an earlier install
+        // has already answered it, so it is not required.
         let allow = springboard.alerts.buttons["Allow"]
-        if allow.waitForExistence(timeout: 30) { allow.tap() }
+        if allow.waitForExistence(timeout: 60) { allow.tap() }
         XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", water))
             .firstMatch.waitForExistence(timeout: 15))
 

@@ -17,6 +17,7 @@ struct MacRootView: View {
     @State private var page: Page? = .routine(.morning)
     @State private var path: [UUID] = []
     @State private var firstLaunch = false
+    @State private var export: ExportFolder?
 
     var body: some View {
         @Bindable var model = model
@@ -89,6 +90,22 @@ struct MacRootView: View {
         .onOpenURL { url in
             guard let routine = WidgetLink.routine(from: url) else { return }
             show(routine)
+        }
+        // File > Export Your Data. Both files go into one folder, named for the day.
+        .onChange(of: router.exportRequested) { _, requested in
+            guard requested else { return }
+            router.exportRequested = false
+            Task {
+                do { export = ExportFolder(try await model.exportFiles()) }
+                catch { model.failure = "Your data could not be exported. \(error.localizedDescription)" }
+            }
+        }
+        .fileExporter(isPresented: Binding(get: { export != nil }, set: { if !$0 { export = nil } }),
+                      document: export, contentType: .folder,
+                      defaultFilename: export?.files.name ?? "Habit Planner") { result in
+            if case .failure(let error) = result {
+                model.failure = "Your data could not be saved. \(error.localizedDescription)"
+            }
         }
         // A new page starts from its own root, not from a habit opened under another.
         .onChange(of: page) { path = [] }

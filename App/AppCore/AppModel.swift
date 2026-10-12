@@ -28,6 +28,9 @@ final class AppModel: RoutineActing {
 
     /// Whether a reload has finished, so an empty list can be told apart from one not read yet.
     private(set) var hasLoaded = false
+    /// Counts finished loads, for views that rebuild something from the store whenever it
+    /// changes. In memory only.
+    private(set) var loads = 0
 
     /// The last write that failed, for the interface to show.
     var failure: String?
@@ -68,6 +71,7 @@ final class AppModel: RoutineActing {
             planned = plans.values.resolved()
             unreadable = loaded.skipped + runs.skipped + bindings.skipped + plans.skipped
             hasLoaded = true
+            loads += 1
             // A change from elsewhere, or midnight, can leave the offer describing something
             // that is no longer true.
             if let offer = undoOffer, !isStillUndoable(offer) { undoOffer = nil }

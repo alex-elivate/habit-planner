@@ -40,6 +40,14 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                ExportRow()
+            } header: {
+                Text("Your data")
+            } footer: {
+                Text("A copy of every habit and completion, as a JSON file and a spreadsheet. Keep it somewhere outside iCloud, such as Files on this phone or another device.")
+            }
+
             if !model.unreadable.isEmpty {
                 Section {
                     ForEach(model.unreadable, id: \.self) { error in
@@ -83,6 +91,49 @@ struct SettingsView: View {
             }
         } catch {
             return error.localizedDescription
+        }
+    }
+}
+
+/// Made when Settings opens, so the share sheet has files ready, and made again after every
+/// load, since Health, iCloud or the watch can change the store while Settings is up, and
+/// midnight changes the file's date.
+private struct ExportRow: View {
+    @Environment(AppModel.self) private var model
+    @State private var files: [URL]?
+    @State private var failure: String?
+
+    var body: some View {
+        // One row, so the task runs once. A Group would hand it to each child.
+        VStack(alignment: .leading, spacing: 8) {
+            row
+        }
+        .task(id: model.loads) { await prepare() }
+    }
+
+    @ViewBuilder private var row: some View {
+        if let files {
+            ShareLink(items: files) {
+                Label("Export your data", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityIdentifier("export")
+        } else if let failure {
+            Label(failure, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+            Button("Try again") { Task { await prepare() } }
+        } else {
+            Label("Preparing your data", systemImage: "square.and.arrow.up")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func prepare() async {
+        do {
+            files = try await model.exportFiles().write()
+            failure = nil
+        } catch {
+            files = nil
+            failure = "Your data could not be exported. \(error.localizedDescription)"
         }
     }
 }

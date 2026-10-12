@@ -428,6 +428,24 @@ from Health. To link your medications:
 A dose counts only when it is logged as taken in Health. A link from a build before September
 2026 says "Relink needed" and counts nothing until you unlink it and link it again.
 
+### Exporting your data
+
+Settings has **Export your data**, under Your data. It shares two files, named for the day:
+
+- **Habit Planner YYYY-MM-DD.json** holds every record the store has: habits, completions and
+  their retractions, pauses and archives, routine runs and planned habits. It holds records,
+  never scores or streaks, since those are folds a later version can work out again. Lists
+  are sorted by day and habit, so two exports can be compared line by line.
+- **Habit Planner YYYY-MM-DD completions.csv** has one row per day a habit was marked, for a
+  spreadsheet: date, routine, habit, Done or Not done, whether you or Health recorded it, and
+  the time it was done where you were.
+
+Health links are left out. Each is a setting on one device, and a medication's identifier
+means nothing on another. Records the store could not read are listed in the JSON by
+description, so an export that is missing something says so. On the Mac, **File > Export
+Your Data** saves both files in one folder. Nothing reads an export back yet. `HabitExport`
+in HabitKit carries a `format` number for when something does.
+
 ## The watch
 
 `App/HabitPlannerWatch/` is a watchOS app embedded in the iOS app. It runs routines and nothing
