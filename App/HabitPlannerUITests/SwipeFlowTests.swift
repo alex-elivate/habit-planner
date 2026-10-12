@@ -40,23 +40,6 @@ final class SwipeFlowTests: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0.1)
     }
 
-    /// A full swipe, then waits for the row to read `value`. On CI's slow simulator a swipe
-    /// sometimes never registers, so it is made again, but only while the row still reads
-    /// what it did before. A swipe that landed late is never doubled.
-    private func swipe(_ title: String, right: Bool, until value: String,
-                       file: StaticString = #filePath, line: UInt = #line) {
-        let element = row(title)
-        for _ in 0..<3 {
-            let before = element.value as? String
-            fullSwipe(title, right: right)
-            let met = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "value == %@", value),
-                                                       evaluatedWith: element)], timeout: 20)
-            if met == .completed { return }
-            guard element.value as? String == before else { break }
-        }
-        expect(title, reads: value, file: file, line: line)
-    }
-
     private func keepScreenshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -70,15 +53,18 @@ final class SwipeFlowTests: XCTestCase {
         expect(stretch, reads: "To do")
 
         // A full swipe right does the habit, and next moves on.
-        swipe(water, right: true, until: "Done")
+        fullSwipe(water, right: true)
+        expect(water, reads: "Done")
         expect(stretch, reads: "Next")
 
         // A full swipe left skips it.
-        swipe(stretch, right: false, until: "Skipped")
+        fullSwipe(stretch, right: false)
+        expect(stretch, reads: "Skipped")
         keepScreenshot("swiped")
 
         // A skipped habit can still be done.
-        swipe(stretch, right: true, until: "Done")
+        fullSwipe(stretch, right: true)
+        expect(stretch, reads: "Done")
 
         // Swiping a done habit left offers Not done, which puts it back.
         row(water).swipeLeft()
@@ -90,7 +76,8 @@ final class SwipeFlowTests: XCTestCase {
 
     func testUnskipPutsTheHabitBack() {
         XCTAssertTrue(row(water).waitForExistence(timeout: 10))
-        swipe(water, right: false, until: "Skipped")
+        fullSwipe(water, right: false)
+        expect(water, reads: "Skipped")
         expect(stretch, reads: "Next")
 
         row(water).swipeLeft()
@@ -152,7 +139,8 @@ final class SwipeFlowTests: XCTestCase {
         app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-LongUndo"]
         app.launch()
         XCTAssertTrue(row(water).waitForExistence(timeout: 15))
-        swipe(water, right: true, until: "Done")
+        fullSwipe(water, right: true)
+        expect(water, reads: "Done")
         let undo = app.buttons["undo"]
         XCTAssertTrue(undo.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Done: \(water)"].exists)
@@ -161,8 +149,10 @@ final class SwipeFlowTests: XCTestCase {
         expect(water, reads: "Next")
 
         // Undoing the completion of a skipped habit leaves it skipped.
-        swipe(water, right: false, until: "Skipped")
-        swipe(water, right: true, until: "Done")
+        fullSwipe(water, right: false)
+        expect(water, reads: "Skipped")
+        fullSwipe(water, right: true)
+        expect(water, reads: "Done")
         app.buttons["undo"].tap()
         expect(water, reads: "Skipped")
     }
