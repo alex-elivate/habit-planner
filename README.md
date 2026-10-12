@@ -678,6 +678,10 @@ cd App
 xcodebuild test -project HabitPlanner.xcodeproj -scheme HabitPlanner -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+CI skips `ReminderActionTests`, which presses Done on a reminder from the lock screen. CI's
+simulator runs SpringBoard too slowly for it to pass reliably, so run the suite locally before
+merging. Uninstall the app from the simulator first, so the notification prompt appears.
+
 The watch app has its own scheme and UI tests, which run on any watch simulator:
 
 ```bash

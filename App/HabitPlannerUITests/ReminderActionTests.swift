@@ -9,6 +9,11 @@ final class ReminderActionTests: XCTestCase {
     private let water = "Drink a glass of water"
 
     func testDoneFromTheLockScreen() throws {
+        // CI's simulator runs SpringBoard slowly enough that this failed there at a different
+        // step each time: the prompt, the banner, reading the lock screen, the Done button.
+        // It runs on a desk machine before every merge instead. CI sets HABIT_ON_CI.
+        try XCTSkipIf(ProcessInfo.processInfo.environment["HABIT_ON_CI"] == "1",
+                      "Too slow to be reliable on CI's simulator. Run it locally.")
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-InMemoryStore", "-SeedDemoData", "-PostTestReminder"]
