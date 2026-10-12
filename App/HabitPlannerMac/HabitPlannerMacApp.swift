@@ -87,6 +87,8 @@ final class MacLaunch {
 final class MacRouter {
     static let shared = MacRouter()
     var requestedRoutine: RoutineSlot?
+    /// Set by File > Export Your Data. The window makes the files and shows the save panel.
+    var exportRequested = false
 }
 
 final class MacAppDelegate: NSObject, NSApplicationDelegate {
@@ -104,6 +106,10 @@ struct MacCommands: Commands {
         // One window is the whole app, so there is no New Window. That also frees Command-N
         // for adding a habit.
         CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .importExport) {
+            Button("Export Your Data…") { MacRouter.shared.exportRequested = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+        }
         CommandMenu("Routine") {
             Button("Show Morning Routine") { MacRouter.shared.requestedRoutine = .morning }
                 .keyboardShortcut("1", modifiers: .command)

@@ -96,7 +96,11 @@ jobs:
 
       - name: Build and run UI tests
         # Unsigned, so the build carries no entitlements. The UI tests launch against the
-        # in-memory store and never reach CloudKit or HealthKit.
+        # in-memory store and never reach CloudKit or HealthKit. xcodebuild hands variables
+        # starting TEST_RUNNER_ to the tests, without the prefix. HABIT_ON_CI skips the
+        # lock-screen reminder test, which is run locally instead.
+        env:
+          TEST_RUNNER_HABIT_ON_CI: "1"
         run: |
           xcodebuild test \
             -project HabitPlanner.xcodeproj \

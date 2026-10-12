@@ -27,6 +27,14 @@ struct RootView: View {
             Text(model.failure ?? "")
         }
         .task {
+            #if DEBUG
+            // Asked first, so the prompt is up before the test leaves the app. Asked after the
+            // first refresh, it could arrive after the test pressed Home, which dismissed it
+            // unanswered and left nothing scheduled.
+            if ProcessInfo.processInfo.arguments.contains("-PostTestReminder") {
+                _ = await ReminderScheduler.requestPermission()
+            }
+            #endif
             model.observeRemoteChanges()
             await model.refresh(health: health, reminders: reminders)
             #if DEBUG
