@@ -97,6 +97,11 @@ final class SwipeFlowTests: XCTestCase {
     func testChoosingAnIcon() {
         XCTAssertTrue(row(water).waitForExistence(timeout: 10))
         row(water).tap()
+        // Today has an Edit button too. On a slow simulator it is still there when the habit's
+        // page is on its way, and tapping it put the list in edit mode instead.
+        let left = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "exists == false"),
+                                                    evaluatedWith: app.navigationBars["Today"])], timeout: 20)
+        XCTAssertEqual(left, .completed, "The habit's page never opened")
         let edit = app.buttons["Edit"]
         XCTAssertTrue(edit.waitForExistence(timeout: 15))
         edit.tap()
