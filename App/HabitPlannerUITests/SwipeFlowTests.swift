@@ -125,7 +125,11 @@ final class SwipeFlowTests: XCTestCase {
                                                     evaluatedWith: app.navigationBars["Today"])], timeout: 20)
         XCTAssertEqual(left, .completed, "The habit's page never opened")
 
-        app.open(URL(string: "habitplanner://run/evening")!)
+        // Through the system, as a widget or reminder tap arrives. `app.open` sometimes started
+        // a fresh copy of the app, without the demo data, instead of handing it the link.
+        XCUIDevice.shared.system.open(URL(string: "habitplanner://run/evening")!)
+        let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if confirm.waitForExistence(timeout: 5) { confirm.tap() }
         let reading = row("Read ten pages")
         XCTAssertTrue(reading.waitForExistence(timeout: 20))
         let shown = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "isHittable == true"),
@@ -155,6 +159,21 @@ final class SwipeFlowTests: XCTestCase {
         expect(water, reads: "Done")
         app.buttons["undo"].tap()
         expect(water, reads: "Skipped")
+    }
+
+    func testTheTriggerLeadsTheRoutineAndEditsTheCue() {
+        let trigger = app.buttons["trigger.morning"]
+        XCTAssertTrue(trigger.waitForExistence(timeout: 15))
+        XCTAssertTrue(trigger.label.contains("After I turn off my alarm"), trigger.label)
+        // Above the first habit, and not a habit: the first habit's row does not repeat it.
+        XCTAssertLessThan(trigger.frame.minY, row(water).frame.minY)
+        XCTAssertFalse(row(water).label.contains("alarm"))
+
+        trigger.tap()
+        let field = app.textFields["editor.cue"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        let focused = expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [focused], timeout: 10), .completed, "The editor did not open on the cue")
     }
 
     func testFallingBehindOffersIdeas() {

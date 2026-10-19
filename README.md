@@ -106,6 +106,12 @@ each opening the editor on the field to change:
 - **Change its days**, to the days that can be kept. A change that would open the routine early
   is still refused.
 
+Once the habit has been done three sessions in a row, the help goes away, and it comes back
+with the next miss. Behind can stay true for weeks after a recovery, until the misses leave the
+window, and offering ideas all that time nagged about a habit that was going fine. Today counts
+toward the three once it is done. `LockInGate.needsHelp` decides this from the same history,
+with nothing stored. The lock-in line still says when a habit needs more than 28 sessions.
+
 Moving the habit to the other routine is not offered. A habit that changes routine would need
 its own join day for the gate, which is a new stored record, so it is left for later.
 
@@ -315,6 +321,12 @@ on a screen that small.
 - **Swipe a done habit left for Not done**, which retracts the completion. Swipe a skipped
   habit left for **Unskip**. Both put the habit back where it was.
 - **Tap a habit** to open its details. On the Mac, right-click offers the same actions.
+- **Starts when.** Each routine opens with the cue that starts it, which is the first active
+  habit's cue, since in a stack every later habit's cue is the habit before it. It has no
+  swipe, no done state and is not counted, so it is drawn as a lead-in rather than as a habit.
+  Tapping it opens that habit's editor on the cue, and with no cue it reads **Add a trigger**.
+  Nothing is stored for it: reorder the routine and it follows the new first habit. The first
+  habit's own row stops repeating the cue.
 - **Undo.** After every swipe, a bar along the bottom says what happened, with **Undo**, for
   five seconds from when it shows, or twelve with VoiceOver. Undoing the completion of a habit that had been
   skipped leaves it skipped again, and undoing Not done on a habit counted from Health puts

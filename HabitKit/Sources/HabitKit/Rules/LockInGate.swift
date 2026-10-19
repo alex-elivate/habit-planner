@@ -117,6 +117,26 @@ public enum LockInGate {
         return day.advanced(by: 1) < clears
     }
 
+    /// Sessions done in a row that count as back on track.
+    public static let backOnTrackSessions = 3
+
+    /// Whether to offer help with `history`: it is behind, and has not been done for the
+    /// last `backOnTrackSessions` sessions.
+    ///
+    /// Behind is a fact about the gate, and it can stay true for weeks after the person has
+    /// recovered, until the misses leave the window. Offering ideas all that time nagged
+    /// about a habit that was going fine. The help comes back with the next miss.
+    public static func needsHelp(_ history: HabitHistory) -> Bool {
+        isBehind(history) && sessionsInARow(history) < backOnTrackSessions
+    }
+
+    /// Sessions done since the last miss. Today counts once it is done, and does not break
+    /// the run before then, since it has not settled.
+    static func sessionsInARow(_ history: HabitHistory) -> Int {
+        let settled = history.settledOccurrences.reversed().prefix { $0.isCompleted }.count
+        return settled + (history.isCompletedToday ? 1 : 0)
+    }
+
     /// Judges a habit on `occurrences` alone, as if `today` were the day after the last.
     private static func assess(_ habitID: UUID, occurrences: [ScheduledOccurrence], today: DayKey) -> Assessment {
         let window = occurrences.suffix(requiredOccurrences)

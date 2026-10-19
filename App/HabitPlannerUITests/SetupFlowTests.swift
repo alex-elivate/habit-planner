@@ -42,7 +42,7 @@ final class SetupFlowTests: XCTestCase {
         let water = app.staticTexts["Drink water"]
         XCTAssertTrue(water.waitForExistence(timeout: 10))
         let stretch = app.staticTexts["Stretch"], bed = app.staticTexts["Make the bed"]
-        XCTAssertTrue(stretch.exists && bed.exists && app.staticTexts["Read ten pages"].exists)
+        XCTAssertTrue(stretch.exists && bed.exists)
         XCTAssertLessThan(water.frame.minY, stretch.frame.minY)
         XCTAssertLessThan(stretch.frame.minY, bed.frame.minY)
 
@@ -50,6 +50,11 @@ final class SetupFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["Add more habits"].firstMatch.exists)
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Setting up today'")).firstMatch.exists)
         keepScreenshot("after setup")
+
+        // The evening routine is below the fold, and a list makes no row it has not shown.
+        let reading = app.staticTexts["Read ten pages"]
+        for _ in 0..<4 where !reading.exists { app.swipeUp() }
+        XCTAssertTrue(reading.exists)
     }
 
     func testNotNowLeavesAnEmptyRoutineToSetUpLater() {

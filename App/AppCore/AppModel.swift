@@ -219,6 +219,11 @@ final class AppModel: RoutineActing {
     /// the way a list kept beside the bar could miss one.
     var coveringScreens: Set<UUID> = []
 
+    /// The pushed pages among `coveringScreens`, such as a habit's page. A link back to Today
+    /// closes these, and Today waits for them to go before scrolling. Sheets a row opened are
+    /// not among them, since a link does not close those.
+    var coveringPages: Set<UUID> = []
+
     /// How long an offer lasts, longer with VoiceOver, which has to read the message first.
     static func undoDuration(voiceOver: Bool) -> TimeInterval {
         #if DEBUG
@@ -329,9 +334,10 @@ final class AppModel: RoutineActing {
         }
     }
 
-    /// Habits the routine is waiting on that need help to bed in. See `LockInGate.isBehind`.
+    /// Habits the routine is waiting on that need help to bed in, and are not back on track.
+    /// See `LockInGate.needsHelp`.
     func fallingBehind(in routine: RoutineSlot) -> [HabitHistory] {
-        waitingOn(routine).filter(LockInGate.isBehind)
+        waitingOn(routine).filter(LockInGate.needsHelp)
     }
 
     // MARK: - Habits

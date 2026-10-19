@@ -21,7 +21,7 @@ struct HabitReportView: View {
                         PeriodTable(title: "Weeks", periods: report.weeks(6), label: weekLabel)
                         PeriodTable(title: "Months", periods: report.months(6), label: monthLabel)
                     }
-                    if let assessment = judged(history), LockInGate.isBehind(history) {
+                    if let assessment = judged(history), LockInGate.needsHelp(history) {
                         let behind = FallingBehind(history: history, assessment: assessment)
                         GroupBox(behind.title) {
                             VStack(alignment: .leading, spacing: 10) {

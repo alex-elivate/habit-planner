@@ -1,5 +1,6 @@
 import HabitKit
 import SwiftUI
+import UIKit
 
 struct TodayView: View {
     @Environment(AppModel.self) private var model
@@ -25,12 +26,31 @@ struct TodayView: View {
     private func scroll(_ proxy: ScrollViewProxy) {
         guard let routine = focus, model.hasLoaded else { return }
         focus = nil
+        // A habit's page or a sheet still on its way off takes the scroll with it, so wait
+        // for it to go. Found once the triggers pushed the evening routine below the fold.
+        let covered = !model.coveringPages.isEmpty || adding != nil || showingSettings
         adding = nil
         showingSettings = false
         // A row, not the section. A list scrolls to rows reliably and to sections not at all.
-        let target: AnyHashable = model.habits(in: routine).first.map { AnyHashable($0.habit.id) }
-            ?? AnyHashable(AddHabitRow.scrollID(routine))
-        withAnimation { proxy.scrollTo(target, anchor: .top) }
+        // The trigger is the routine's top row whenever it has an active habit.
+        let habits = model.habits(in: routine)
+        let target: AnyHashable = RoutineTriggerRow.firstHabit(of: habits) != nil
+            ? AnyHashable(RoutineTriggerRow.scrollID(routine))
+            : habits.first.map { AnyHashable($0.habit.id) } ?? AnyHashable(AddHabitRow.scrollID(routine))
+        Task {
+            // A link arrives while the app is still coming forward, and a list scrolled before
+            // it is on screen stays where it was. So wait for the app to be active and for a
+            // habit's page to have gone, up to three seconds, then a moment for the last
+            // animation. Not for a sheet a row opened: a link does not close it, and waiting
+            // on it would only delay the scroll.
+            let inactive = UIApplication.shared.applicationState != .active
+            for _ in 0..<30 where UIApplication.shared.applicationState != .active
+                || !model.coveringPages.isEmpty {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if covered || inactive { try? await Task.sleep(for: .milliseconds(350)) }
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+        }
     }
 
     private var list: some View {
@@ -57,7 +77,7 @@ struct TodayView: View {
             }
         }
         .navigationTitle("Today")
-        .navigationDestination(for: UUID.self) { HabitDetailView(habitID: $0).coversUndoBar() }
+        .navigationDestination(for: UUID.self) { HabitDetailView(habitID: $0).coversUndoBar(isPage: true) }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {

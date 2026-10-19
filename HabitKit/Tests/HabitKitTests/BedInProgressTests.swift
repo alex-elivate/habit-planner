@@ -52,6 +52,20 @@ struct BedInProgressTests {
         #expect(!LockInGate.isBehind(makeHistory(pattern(missesAt: [3, 9, 15, 21]))))
     }
 
+    @Test("Back on track for three sessions, a behind habit stops asking for help, until the next miss")
+    func backOnTrack() {
+        // Five misses: behind, and stays behind however it goes from here.
+        let scattered = "MCMCMCMCM"
+        #expect(LockInGate.needsHelp(makeHistory(scattered)))
+        #expect(LockInGate.needsHelp(makeHistory(scattered + "CC")))
+        #expect(LockInGate.isBehind(makeHistory(scattered + "CCC")))
+        #expect(!LockInGate.needsHelp(makeHistory(scattered + "CCC")))
+        // Today counts once done, so the third session hides it the day it happens.
+        #expect(!LockInGate.needsHelp(makeHistory(scattered + "CC", completedToday: true)))
+        // A miss brings it back.
+        #expect(LockInGate.needsHelp(makeHistory(scattered + "CCCM")))
+    }
+
     @Test("An early double miss clears before session 28, a late one does not")
     func behindOnDoubleMiss() {
         // Second miss three days ago, 22 daily sessions still to go: it clears first.

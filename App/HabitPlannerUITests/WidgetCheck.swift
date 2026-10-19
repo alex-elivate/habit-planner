@@ -66,7 +66,9 @@ final class WidgetCheck: XCTestCase {
             addWidget()
         }
         // The timeline can arrive a moment after the widget is placed, so wait on its content.
-        XCTAssertTrue(springboard.staticTexts["Drink water"].waitForExistence(timeout: 10),
+        // The large widget writes "Next: Drink water", so match on the habit's name inside.
+        XCTAssertTrue(springboard.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Drink water'")).firstMatch
+                        .waitForExistence(timeout: 10),
                       "The widget never showed the habit")
         keep("home screen", springboard.screenshot())
 
@@ -126,8 +128,10 @@ final class WidgetCheck: XCTestCase {
             springboard.staticTexts["Habit Planner"].firstMatch.tap()
         }
 
-        // Small first, medium one swipe along.
+        // Small first, medium one swipe along, large two. HABIT_WIDGET_SIZE=large picks large,
+        // for a look at that layout; the Done tap below assumes medium.
         springboard.swipeLeft()
+        if ProcessInfo.processInfo.environment["HABIT_WIDGET_SIZE"] == "large" { springboard.swipeLeft() }
         keep("size picker", springboard.screenshot())
         let place = springboard.buttons.matching(NSPredicate(format: "label CONTAINS 'Add Widget'")).firstMatch
         XCTAssertTrue(place.waitForExistence(timeout: 5))
