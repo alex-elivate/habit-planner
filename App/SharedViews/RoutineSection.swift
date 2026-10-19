@@ -30,9 +30,14 @@ struct RoutineSection: View {
         let states = model.states(in: routine)
         let due = states.values.filter { $0 != .notDue }.count
         let done = states.values.filter { $0 == .done }.count
+        let first = RoutineTriggerRow.firstHabit(of: habits)
         Section {
+            if let first {
+                RoutineTriggerRow(history: first).id(RoutineTriggerRow.scrollID(routine))
+            }
             ForEach(habits, id: \.habit.id) { history in
-                HabitListRow(history: history, state: states[history.habit.id] ?? .notDue)
+                HabitListRow(history: history, state: states[history.habit.id] ?? .notDue,
+                             cueIsTrigger: history.habit.id == first?.habit.id)
             }
             .onMove { source, destination in
                 Task { await model.move(in: routine, from: source, to: destination) }
@@ -62,6 +67,7 @@ struct HabitListRow: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     let history: HabitHistory
     let state: StepState
+    var cueIsTrigger = false
 
     /// What Health reported for this habit, and on which day, so an answer from another day
     /// is never offered.
@@ -72,7 +78,7 @@ struct HabitListRow: View {
 
     var body: some View {
         NavigationLink(value: history.habit.id) {
-            HabitRow(history: history, state: state, offer: offer)
+            HabitRow(history: history, state: state, offer: offer, cueIsTrigger: cueIsTrigger)
         }
         .accessibilityValue(HabitRow.label(for: state, history: history))
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -148,6 +154,8 @@ struct HabitRow: View {
     let state: StepState
     /// When Health shows this habit happened today, if it does and it is not yet counted.
     var offer: Date?
+    /// The first habit's cue starts the routine and is shown above it, so not again here.
+    var cueIsTrigger = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -195,9 +203,65 @@ struct HabitRow: View {
         case .skipped: return "Skipped. You can still mark it done."
         case .next:
             if let small = history.habit.twoMinuteVersion { return "Next. Start with: \(small)" }
-            if let cue = history.habit.cue { return "Next. \(cue)" }
+            if let cue = history.habit.cue, !cueIsTrigger { return "Next. \(cue)" }
             return "Next. \(history.streak.caption)"
         case .done, .waiting: return history.streak.caption
+        }
+    }
+}
+
+/// What starts the routine: the first habit's cue, since in a stack each habit's cue is the
+/// one before it and the first one's is something that already happens.
+///
+/// Not a step. It has no swipe and no done state, and it is not counted, so it is drawn as the
+/// lead-in to the list rather than as a row like the habits. Nothing is stored for it, so
+/// reordering the routine moves the trigger with the new first habit. Tapping opens that
+/// habit's editor on the cue.
+struct RoutineTriggerRow: View {
+    let history: HabitHistory
+    @State private var editing: HabitEditRequest?
+
+    /// Where Today scrolls to show this routine from its start.
+    static func scrollID(_ routine: RoutineSlot) -> String { "trigger.\(routine.rawValue)" }
+
+    /// The first habit still running. A paused one does not start the routine.
+    static func firstHabit(of habits: [HabitHistory]) -> HabitHistory? {
+        habits.first { $0.currentState == .active }
+    }
+
+    var body: some View {
+        Button { editing = HabitEditRequest(focus: .cue) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.turn.right.down")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    // The habit icons' width, so the text lines up with the habit titles.
+                    .frame(width: 40)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Starts when").font(.caption).foregroundStyle(.secondary)
+                    if let cue = history.habit.cue?.trimmingCharacters(in: .whitespaces), !cue.isEmpty {
+                        Text(cue.prefix(1).uppercased() + cue.dropFirst()).italic()
+                    } else {
+                        Text("Add a trigger").foregroundStyle(.tint)
+                    }
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Edits the cue of \(history.habit.title), the first habit.")
+        .accessibilityIdentifier("trigger.\(history.habit.routine.rawValue)")
+        .moveDisabled(true)
+        .deleteDisabled(true)
+        .sheet(item: $editing) { request in
+            NavigationStack {
+                HabitEditorView(mode: .edit(history.habit.id), habit: history.habit, focus: request.focus)
+            }
+            .sheetMinimumSize(width: 480, height: 540)
+            .coversUndoBar()
         }
     }
 }

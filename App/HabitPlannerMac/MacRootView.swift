@@ -58,7 +58,7 @@ struct MacRootView: View {
                         ContentUnavailableView("Choose a routine", systemImage: "sidebar.left")
                     }
                 }
-                .navigationDestination(for: UUID.self) { HabitReportView(habitID: $0).coversUndoBar() }
+                .navigationDestination(for: UUID.self) { HabitReportView(habitID: $0).coversUndoBar(isPage: true) }
             }
         }
         // First launch, as on the phone.

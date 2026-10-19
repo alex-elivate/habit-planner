@@ -56,11 +56,18 @@ struct UndoBar: ViewModifier {
 private struct CoversUndoBar: ViewModifier {
     @Environment(AppModel.self) private var model
     @State private var id = UUID()
+    let isPage: Bool
 
     func body(content: Content) -> some View {
         content
-            .onAppear { model.coveringScreens.insert(id) }
-            .onDisappear { model.coveringScreens.remove(id) }
+            .onAppear {
+                model.coveringScreens.insert(id)
+                if isPage { model.coveringPages.insert(id) }
+            }
+            .onDisappear {
+                model.coveringScreens.remove(id)
+                model.coveringPages.remove(id)
+            }
     }
 }
 
@@ -68,6 +75,7 @@ extension View {
     /// The undo bar.
     func undoBar() -> some View { modifier(UndoBar()) }
 
-    /// Holds the undo bar back while this screen is up.
-    func coversUndoBar() -> some View { modifier(CoversUndoBar()) }
+    /// Holds the undo bar back while this screen is up. `isPage` for a screen pushed over the
+    /// one with the bar, rather than a sheet.
+    func coversUndoBar(isPage: Bool = false) -> some View { modifier(CoversUndoBar(isPage: isPage)) }
 }

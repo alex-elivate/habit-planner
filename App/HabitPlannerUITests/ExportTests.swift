@@ -28,5 +28,9 @@ final class ExportTests: XCTestCase {
         attachment.name = "export-share-sheet"
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        // The share sheet is a separate service. Left up, it kept the lock-screen test that
+        // runs next from finding its reminder.
+        app.terminate()
     }
 }

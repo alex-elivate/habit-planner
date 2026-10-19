@@ -26,13 +26,23 @@ final class ReminderActionTests: XCTestCase {
             return true
         }
         app.launch()
-        // The prompt can take well over ten seconds on a simulator that has just booted, and
-        // without Allow the reminder is never scheduled. A run that kept an earlier install
-        // has already answered it, so it is not required.
+        // Without Allow the reminder is never scheduled. The app asks at launch, so the prompt
+        // comes soon after the list, though slowly on a simulator that has just booted. Waiting
+        // a fixed minute for it was wrong the other way: with the prompt already answered, the
+        // reminder fired while the test was still waiting in the app. So tap Allow when it
+        // shows, and move on once the list has been up ten seconds without one.
         let allow = springboard.alerts.buttons["Allow"]
-        if allow.waitForExistence(timeout: 60) { allow.tap() }
-        XCTAssertTrue(app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", water))
-            .firstMatch.waitForExistence(timeout: 15))
+        let list = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", water)).firstMatch
+        var listSince: Date?
+        for _ in 0..<60 {
+            if allow.exists { allow.tap(); break }
+            if list.exists {
+                listSince = listSince ?? .now
+                if let listSince, Date.now.timeIntervalSince(listSince) > 10 { break }
+            }
+            sleep(1)
+        }
+        XCTAssertTrue(list.waitForExistence(timeout: 15))
 
         // Leave the app once it has scheduled the reminder, and before it fires 25 seconds
         // later. It lands as a banner on the home screen, and its button runs with the app in

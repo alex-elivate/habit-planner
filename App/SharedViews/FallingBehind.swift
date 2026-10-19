@@ -16,7 +16,7 @@ struct HabitEditRequest: Identifiable {
     var focus: HabitEditorFocus?
 }
 
-/// Ideas for a habit that will not bed in by waiting alone. See `LockInGate.isBehind`.
+/// Ideas for a habit that will not bed in by waiting alone. See `LockInGate.needsHelp`.
 ///
 /// Changes to the habit itself, the ones the habit method suggests: make it easier to start,
 /// tie it to something that already happens, or ask for it only on days that can be kept.
